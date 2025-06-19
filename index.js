@@ -16,9 +16,14 @@ const client = new Client({
 client.once('ready', () => {
   console.log(`GlowBot is online as ${client.user.tag}`);
 
-  const channel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
-  if (channel) {
-    channel.send('✅ GlowBot is now online and watching for makeup drops!');
+  const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
+  if (trendChannel) {
+    trendChannel.send('✅ GlowBot is now online and watching for makeup trends!');
+  }
+
+  const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
+  if (dropChannel) {
+    dropChannel.send('✅ GlowBot is now online and watching for makeup drops!');
   }
 });
 
@@ -53,9 +58,9 @@ async function checkStock() {
       const isAvailable = $(item.selector).text().toLowerCase().includes('add to bag') || $(item.selector).length > 0;
 
       if (isAvailable) {
-        const channel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
-        if (channel) {
-          channel.send(`💄 **${item.name}** is back in stock!\n🔗 ${item.url}`);
+        const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
+        if (dropChannel) {
+          dropChannel.send(`💄 **${item.name}** is back in stock!\n🔗 ${item.url}`);
         }
       }
     } catch (error) {
@@ -75,9 +80,9 @@ async function checkTrends() {
   ];
 
   const randomTrend = trendingTags[Math.floor(Math.random() * trendingTags.length)];
-  const channel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
-  if (channel) {
-    channel.send(`🔥 Trend Alert! The tag **${randomTrend}** is gaining attention on social media.`);
+  const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
+  if (trendChannel) {
+    trendChannel.send(`🔥 Trend Alert! The tag **${randomTrend}** is gaining attention on social media.`);
   }
 }
 
