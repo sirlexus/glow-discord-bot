@@ -2,7 +2,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 require('dotenv').config();
 const axios = require('axios');
-const cheerio = require('cheerio');
 const cron = require('node-cron');
 
 const client = new Client({
@@ -16,14 +15,22 @@ const client = new Client({
 client.once('ready', () => {
   console.log(`GlowBot is online as ${client.user.tag}`);
 
-  const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
-  if (trendChannel) {
-    trendChannel.send('✅ GlowBot is now online and watching for makeup trends!');
+  try {
+    const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
+    if (trendChannel) {
+      trendChannel.send('✅ GlowBot is now online and watching for makeup trends!');
+    }
+  } catch (err) {
+    console.error('Trend channel send failed:', err.message);
   }
 
-  const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
-  if (dropChannel) {
-    dropChannel.send('✅ GlowBot is now online and watching for makeup drops!');
+  try {
+    const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
+    if (dropChannel) {
+      dropChannel.send('✅ GlowBot is now online and watching for makeup drops!');
+    }
+  } catch (err) {
+    console.error('Drop channel send failed:', err.message);
   }
 });
 
@@ -40,36 +47,7 @@ client.on('messageCreate', message => {
   }
 });
 
-// Example product URLs to track (expand this list with actual product/category links)
-const productLinks = [
-  {
-    name: 'Rare Beauty Soft Pinch Blush - Mecca',
-    url: 'https://www.mecca.com.au/rare-beauty-soft-pinch-liquid-blush/I-051524.html',
-    selector: '.product-add-to-cart .add-to-cart-button'
-  }
-  // Add more links with appropriate selectors
-];
-
-async function checkStock() {
-  for (const item of productLinks) {
-    try {
-      const response = await axios.get(item.url);
-      const $ = cheerio.load(response.data);
-      const isAvailable = $(item.selector).text().toLowerCase().includes('add to bag') || $(item.selector).length > 0;
-
-      if (isAvailable) {
-        const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
-        if (dropChannel) {
-          dropChannel.send(`💄 **${item.name}** is back in stock!\n🔗 ${item.url}`);
-        }
-      }
-    } catch (error) {
-      console.error(`Error checking stock for ${item.name}:`, error.message);
-    }
-  }
-}
-
-// Simulated trend alert (placeholder for real social scraping/API)
+// Simulated trend alert
 async function checkTrends() {
   const trendingTags = [
     '#glowup',
@@ -80,19 +58,22 @@ async function checkTrends() {
   ];
 
   const randomTrend = trendingTags[Math.floor(Math.random() * trendingTags.length)];
-  const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
-  if (trendChannel) {
-    trendChannel.send(`🔥 Trend Alert! The tag **${randomTrend}** is gaining attention on social media.`);
+  try {
+    const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
+    if (trendChannel) {
+      trendChannel.send(`🔥 Trend Alert! The tag **${randomTrend}** is gaining attention on social media.`);
+    }
+  } catch (err) {
+    console.error('Trend alert send failed:', err.message);
   }
 }
 
-// Schedule jobs every 10 minutes
+// Schedule job every 10 minutes
 cron.schedule('*/10 * * * *', () => {
-  console.log('Running stock check...');
-  checkStock();
-
   console.log('Running trend check...');
   checkTrends();
 });
 
-client.login(process.env.BOT_TOKEN);
+client.login(process.env.BOT_TOKEN).catch(err => {
+  console.error('Failed to login to Discord:', err.message);
+});
