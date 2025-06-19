@@ -15,6 +15,11 @@ const client = new Client({
 
 client.once('ready', () => {
   console.log(`GlowBot is online as ${client.user.tag}`);
+
+  const channel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
+  if (channel) {
+    channel.send('✅ GlowBot is now online and watching for makeup drops!');
+  }
 });
 
 client.on('messageCreate', message => {
@@ -50,8 +55,7 @@ async function checkStock() {
       if (isAvailable) {
         const channel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
         if (channel) {
-          channel.send(`💄 **${item.name}** is back in stock!
-🔗 ${item.url}`);
+          channel.send(`💄 **${item.name}** is back in stock!\n🔗 ${item.url}`);
         }
       }
     } catch (error) {
@@ -60,10 +64,30 @@ async function checkStock() {
   }
 }
 
-// Schedule job every 10 minutes
+// Simulated trend alert (placeholder for real social scraping/API)
+async function checkTrends() {
+  const trendingTags = [
+    '#glowup',
+    '#rarebeauty',
+    '#softpinch',
+    '#makeuphaul',
+    '#tiktokmadebuyit'
+  ];
+
+  const randomTrend = trendingTags[Math.floor(Math.random() * trendingTags.length)];
+  const channel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
+  if (channel) {
+    channel.send(`🔥 Trend Alert! The tag **${randomTrend}** is gaining attention on social media.`);
+  }
+}
+
+// Schedule jobs every 10 minutes
 cron.schedule('*/10 * * * *', () => {
   console.log('Running stock check...');
   checkStock();
+
+  console.log('Running trend check...');
+  checkTrends();
 });
 
 client.login(process.env.BOT_TOKEN);
