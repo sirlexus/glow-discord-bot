@@ -2,7 +2,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 require('dotenv').config();
 const axios = require('axios');
-const cheerio = require('cheerio');
 const cron = require('node-cron');
 
 const client = new Client({
@@ -41,9 +40,9 @@ client.on('messageCreate', message => {
 });
 
 const productLinks = [
-  // ✅ Updated AU bestsellers — Mecca (Valid URLs as of 2025)
+  // ✅ Updated AU bestsellers — Mecca
   { name: 'Rare Beauty Blush', url: 'https://www.mecca.com.au/rare-beauty-soft-pinch-liquid-blush/V-052855.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
-  { name: 'Charlotte Tilbury Flawless Filter', url: 'https://www.mecca.com.au/charlotte-tilbury-hollywood-flawless-filter/V-040882.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
+  { name: 'Charlotte Tilbury Flawless Filter', url: 'https://www.mecca.com.au/charlotte-tilbury-hollywood-flawless-filter/V-051554.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
   { name: 'Glow Recipe Dew Drops', url: 'https://www.mecca.com.au/glow-recipe-watermelon-glow-niacinamide-dew-drops/V-049893.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
   { name: 'Hourglass Ambient Blush', url: 'https://www.mecca.com.au/hourglass-ambient-lighting-blush/V-018059.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
 
@@ -69,8 +68,7 @@ async function checkRealDrops() {
       if (inStock) {
         const dropChannel = client.channels.cache.find(c => c.name === product.channel && c.isTextBased());
         if (dropChannel) {
-          dropChannel.send(`🔔 **${product.name}** is now available!
-🔗 ${product.url}`);
+          dropChannel.send(`🔔 **${product.name}** is now available!\n🔗 ${product.url}`);
         }
       }
     } catch (err) {
