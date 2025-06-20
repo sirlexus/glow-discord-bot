@@ -1,4 +1,4 @@
-// glowbot/index.js
+
 const { Client, GatewayIntentBits } = require('discord.js');
 require('dotenv').config();
 const puppeteer = require('puppeteer');
@@ -89,7 +89,11 @@ const productLinks = [
 ];
 
 async function checkRealDrops() {
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await puppeteer.launch({
+    headless: true,
+    executablePath: puppeteer.executablePath()
+  });
+
   const page = await browser.newPage();
 
   for (const product of productLinks) {
@@ -107,8 +111,7 @@ async function checkRealDrops() {
           c => c.name === product.channel && c.isTextBased()
         );
         if (dropChannel) {
-          dropChannel.send(`🔔 **${product.name}** is now available!
-🔗 ${product.url}`);
+          dropChannel.send(`🔔 **${product.name}** is now available!\n🔗 ${product.url}`);
         }
       }
     } catch (err) {
