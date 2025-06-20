@@ -1,10 +1,8 @@
 // glowbot/index.js
 const { Client, GatewayIntentBits } = require('discord.js');
 require('dotenv').config();
-const axios = require('axios');
-const cheerio = require('cheerio');
-const cron = require('node-cron');
 const puppeteer = require('puppeteer');
+const cron = require('node-cron');
 
 const client = new Client({
   intents: [
@@ -17,27 +15,19 @@ const client = new Client({
 client.once('ready', () => {
   console.log(`GlowBot is online as ${client.user.tag}`);
 
-  try {
-    const trendChannel = client.channels.cache.find(
-      c => c.name === '🔥trending-beauty' && c.isTextBased()
-    );
-    if (trendChannel) {
-      trendChannel.send('✅ GlowBot is now online and watching for makeup trends!');
+  const notifyChannel = (name, message) => {
+    try {
+      const channel = client.channels.cache.find(
+        c => c.name === name && c.isTextBased()
+      );
+      if (channel) channel.send(message);
+    } catch (err) {
+      console.error(`${name} channel send failed:`, err.message);
     }
-  } catch (err) {
-    console.error('Trend channel send failed:', err.message);
-  }
+  };
 
-  try {
-    const dropChannel = client.channels.cache.find(
-      c => c.name === '💄makeup-drops' && c.isTextBased()
-    );
-    if (dropChannel) {
-      dropChannel.send('✅ GlowBot is now online and tracking real-time makeup drops!');
-    }
-  } catch (err) {
-    console.error('Drop channel send failed:', err.message);
-  }
+  notifyChannel('🔥trending-beauty', '✅ GlowBot is now online and watching for makeup trends!');
+  notifyChannel('💄makeup-drops', '✅ GlowBot is now online and tracking real-time makeup drops!');
 });
 
 client.on('messageCreate', message => {
@@ -99,19 +89,18 @@ const productLinks = [
 ];
 
 async function checkRealDrops() {
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
+
   for (const product of productLinks) {
     try {
-      const browser = await puppeteer.launch({ headless: 'new' });
-      const page = await browser.newPage();
       await page.goto(product.url, {
-        waitUntil: 'domcontentloaded',
+        waitUntil: 'networkidle2',
         timeout: 30000
       });
 
-      const html = await page.content();
-      await browser.close();
-
-      const inStock = html.toLowerCase().includes(product.keyword);
+      const body = await page.content();
+      const inStock = body.toLowerCase().includes(product.keyword);
 
       if (inStock) {
         const dropChannel = client.channels.cache.find(
@@ -126,6 +115,8 @@ async function checkRealDrops() {
       console.error(`Drop check failed for ${product.name}:`, err.message);
     }
   }
+
+  await browser.close();
 }
 
 cron.schedule('* * * * *', () => {
