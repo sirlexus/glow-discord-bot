@@ -1,15 +1,32 @@
 {
   "name": "glowbot",
   "version": "1.0.0",
+  "description": "Discord bot to track trending beauty, makeup drops, Labubu and handbag releases.",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.11.0",
-    "dotenv": "^16.3.1",
-    "axios": "^1.6.7",
+    "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
-    "node-cron": "^3.0.2"
-  }
+    "discord.js": "^14.13.0",
+    "dotenv": "^16.3.1",
+    "node-cron": "^3.0.2",
+    "puppeteer": "^22.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "makeup",
+    "beauty",
+    "drops",
+    "labubu",
+    "handbags",
+    "puppeteer"
+  ],
+  "author": "Dean Lambeski",
+  "license": "MIT"
 }
