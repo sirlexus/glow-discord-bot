@@ -1,19 +1,20 @@
 {
   "name": "glowbot",
   "version": "1.0.0",
-  "description": "GlowBot: Makeup Drops & Trend Alerts",
+  "description": "A Discord bot that tracks makeup drops and beauty trends",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "postinstall": "npx puppeteer browsers install chrome"
   },
+  "keywords": ["discord", "bot", "beauty", "makeup", "puppeteer", "drops"],
+  "author": "Dean Lambeski",
+  "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.8",
-    "cheerio": "^1.0.0-rc.12",
     "discord.js": "^14.13.0",
-    "dotenv": "^16.4.5",
+    "dotenv": "^16.3.1",
     "node-cron": "^3.0.3",
-    "puppeteer": "^22.7.0"
+    "puppeteer": "^22.6.3"
   },
   "engines": {
     "node": ">=18.0.0"
