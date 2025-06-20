@@ -101,30 +101,25 @@ const productLinks = [
 async function checkRealDrops() {
   for (const product of productLinks) {
     try {
-      let inStock = false;
+      const browser = await puppeteer.launch({ headless: 'new' });
+      const page = await browser.newPage();
+      await page.goto(product.url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      });
 
-      if (product.url.includes('mecca.com.au')) {
-        const browser = await puppeteer.launch({ headless: 'new' });
-        const page = await browser.newPage();
-        await page.goto(product.url, { waitUntil: 'networkidle2' });
-        const pageContent = await page.content();
-        await browser.close();
-        inStock = pageContent.toLowerCase().includes(product.keyword);
-      } else {
-        const res = await axios.get(product.url, {
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-          }
-        });
-        inStock = res.data.toLowerCase().includes(product.keyword);
-      }
+      const html = await page.content();
+      await browser.close();
+
+      const inStock = html.toLowerCase().includes(product.keyword);
 
       if (inStock) {
         const dropChannel = client.channels.cache.find(
           c => c.name === product.channel && c.isTextBased()
         );
         if (dropChannel) {
-          dropChannel.send(`🔔 **${product.name}** is now available!\n🔗 ${product.url}`);
+          dropChannel.send(`🔔 **${product.name}** is now available!
+🔗 ${product.url}`);
         }
       }
     } catch (err) {
