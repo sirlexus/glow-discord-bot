@@ -37,6 +37,4 @@ client.once('ready', () => {
 
 client.on('messageCreate', message => {
   if (message.author.bot) return;
-  const content = message.content.toLowerCase();
-
-  if (content.includes('makeup') || content.includes('
+  const
