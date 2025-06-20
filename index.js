@@ -1,9 +1,7 @@
-// glowbot/index.js
 const { Client, GatewayIntentBits } = require('discord.js');
 require('dotenv').config();
 const puppeteer = require('puppeteer');
 const cron = require('node-cron');
-const path = require('path');
 
 const client = new Client({
   intents: [
@@ -92,7 +90,6 @@ const productLinks = [
 async function checkRealDrops() {
   const browser = await puppeteer.launch({
     headless: true,
-    executablePath: '/opt/render/.cache/puppeteer/chrome/linux-127.0.6533.88/chrome-linux64/chrome',
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
 
