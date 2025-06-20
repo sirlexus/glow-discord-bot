@@ -2,6 +2,7 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 require('dotenv').config();
 const axios = require('axios');
+const cheerio = require('cheerio');
 const cron = require('node-cron');
 
 const client = new Client({
@@ -27,7 +28,7 @@ client.once('ready', () => {
   try {
     const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
     if (dropChannel) {
-      dropChannel.send('✅ GlowBot is now online and watching for makeup drops!');
+      dropChannel.send('✅ GlowBot is now online and tracking real-time makeup drops!');
     }
   } catch (err) {
     console.error('Drop channel send failed:', err.message);
@@ -47,31 +48,58 @@ client.on('messageCreate', message => {
   }
 });
 
-// Simulated trend alert
-async function checkTrends() {
-  const trendingTags = [
-    '#glowup',
-    '#rarebeauty',
-    '#softpinch',
-    '#makeuphaul',
-    '#tiktokmadebuyit'
-  ];
+const productLinks = [
+  {
+    name: 'Rare Beauty Soft Pinch Liquid Blush',
+    url: 'https://www.mecca.com.au/rare-beauty-soft-pinch-liquid-blush/I-051524.html',
+    keyword: 'add-to-cart'
+  },
+  {
+    name: 'Charlotte Tilbury Hollywood Flawless Filter',
+    url: 'https://www.mecca.com.au/charlotte-tilbury-hollywood-flawless-filter/V-040882.html',
+    keyword: 'add-to-cart'
+  },
+  {
+    name: 'Glow Recipe Watermelon Glow Niacinamide Dew Drops',
+    url: 'https://www.mecca.com.au/glow-recipe-watermelon-glow-niacinamide-dew-drops/V-049893.html',
+    keyword: 'add-to-cart'
+  },
+  {
+    name: 'Hourglass Ambient Lighting Blush',
+    url: 'https://www.mecca.com.au/hourglass-ambient-lighting-blush/V-018059.html',
+    keyword: 'add-to-cart'
+  },
+  {
+    name: 'Dior Lip Glow Oil',
+    url: 'https://www.sephora.com.au/products/dior-addict-lip-glow-oil/v/001-pink',
+    keyword: 'add-to-bag'
+  }
+];
 
-  const randomTrend = trendingTags[Math.floor(Math.random() * trendingTags.length)];
-  try {
-    const trendChannel = client.channels.cache.find(c => c.name === '🔥trending-beauty' && c.isTextBased());
-    if (trendChannel) {
-      trendChannel.send(`🔥 Trend Alert! The tag **${randomTrend}** is gaining attention on social media.`);
+async function checkRealDrops() {
+  for (const product of productLinks) {
+    try {
+      const res = await axios.get(product.url);
+      const html = res.data;
+      const inStock = html.toLowerCase().includes(product.keyword);
+
+      if (inStock) {
+        const dropChannel = client.channels.cache.find(c => c.name === '💄makeup-drops' && c.isTextBased());
+        if (dropChannel) {
+          dropChannel.send(`💄 DROP ALERT: **${product.name}** is now in stock!
+🔗 ${product.url}`);
+        }
+      }
+    } catch (err) {
+      console.error(`Drop check failed for ${product.name}:`, err.message);
     }
-  } catch (err) {
-    console.error('Trend alert send failed:', err.message);
   }
 }
 
-// Schedule job every 10 minutes
-cron.schedule('*/10 * * * *', () => {
-  console.log('Running trend check...');
-  checkTrends();
+// Run every minute
+cron.schedule('* * * * *', () => {
+  console.log('Checking bestseller drops...');
+  checkRealDrops();
 });
 
 client.login(process.env.BOT_TOKEN).catch(err => {
