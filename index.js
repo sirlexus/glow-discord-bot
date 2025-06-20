@@ -37,4 +37,19 @@ client.once('ready', () => {
 
 client.on('messageCreate', message => {
   if (message.author.bot) return;
-  const
+  const content = message.content.toLowerCase();
+
+  if (content.includes('makeup') || content.includes('drop')) {
+    message.channel.send('💄 Heads up! A makeup drop might be happening soon. Stay tuned!');
+  }
+
+  if (content === '!glow') {
+    message.channel.send('✨ GlowBot at your service! Type `makeup`, `drop`, or `!glow` for updates.');
+  }
+});
+
+const productLinks = [
+  { name: 'Rare Beauty Blush', url: 'https://www.mecca.com.au/rare-beauty-soft-pinch-liquid-blush/I-051524.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
+  { name: 'Charlotte Tilbury Flawless Filter', url: 'https://www.mecca.com.au/charlotte-tilbury-hollywood-flawless-filter/V-040882.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
+  { name: 'Glow Recipe Dew Drops', url: 'https://www.mecca.com.au/glow-recipe-watermelon-glow-niacinamide-dew-drops/V-049893.html', keyword: 'add-to-cart', channel: '💄makeup-drops' },
+  { name: 'Hourglass Ambient
