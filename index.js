@@ -4,6 +4,7 @@ require('dotenv').config();
 const axios = require('axios');
 const cheerio = require('cheerio');
 const cron = require('node-cron');
+const puppeteer = require('puppeteer');
 
 const client = new Client({
   intents: [
@@ -82,20 +83,41 @@ const productLinks = [
     url: 'https://www.mecca.com.au/nars-radiant-creamy-concealer/V-018737.html',
     keyword: 'add-to-cart',
     channel: '💄makeup-drops'
+  },
+  {
+    name: 'Labubu Figurine',
+    url: 'https://www.popmart.com/en/products/labubu',
+    keyword: 'buy now',
+    channel: '💄makeup-drops'
+  },
+  {
+    name: 'Mini Designer Handbag',
+    url: 'https://www.farfetch.com/au/shopping/women/mini-bags-1/items.aspx',
+    keyword: 'add to bag',
+    channel: '💄makeup-drops'
   }
 ];
 
 async function checkRealDrops() {
   for (const product of productLinks) {
     try {
-      const res = await axios.get(product.url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-        }
-      });
+      let inStock = false;
 
-      const html = res.data;
-      const inStock = html.toLowerCase().includes(product.keyword);
+      if (product.url.includes('mecca.com.au')) {
+        const browser = await puppeteer.launch({ headless: 'new' });
+        const page = await browser.newPage();
+        await page.goto(product.url, { waitUntil: 'networkidle2' });
+        const pageContent = await page.content();
+        await browser.close();
+        inStock = pageContent.toLowerCase().includes(product.keyword);
+      } else {
+        const res = await axios.get(product.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+          }
+        });
+        inStock = res.data.toLowerCase().includes(product.keyword);
+      }
 
       if (inStock) {
         const dropChannel = client.channels.cache.find(
