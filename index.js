@@ -1,52 +1,56 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const cron = require('node-cron');
+const { Client, GatewayIntentBits, Partials } = require('discord.js');
 const puppeteer = require('puppeteer');
-const products = require('./products.json');
-require('dotenv').config();
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
 });
 
-async function checkRealDrops() {
+// Disable online status message
+client.once('ready', () => {
+  console.log(`GlowBot is running silently...`);
+});
+
+// Command to manually test bot is online (optional)
+client.on('messageCreate', async message => {
+  if (message.content === '!ping') {
+    message.reply('GlowBot is active.');
+  }
+});
+
+// Example Puppeteer product checker (replace URL logic later)
+async function checkProductAvailability(url) {
   const browser = await puppeteer.launch({
-    headless: 'new',
-    args: ['--no-sandbox'],
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
+  const page = await browser.newPage();
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+
+  // You can modify this selector or logic to suit the actual product page
+  const availability = await page.evaluate(() => {
+    const stock = document.querySelector('.product-stock, .stock-status, .in-stock');
+    return stock ? stock.textContent.trim() : 'Status unknown';
   });
 
-  const page = await browser.newPage();
-
-  for (const product of products) {
-    try {
-      await page.goto(product.url, {
-        waitUntil: 'networkidle2',
-        timeout: 30000,
-      });
-
-      const content = await page.content();
-      const inStock = !content.includes('Sold Out') && !content.includes('Out of stock');
-
-      if (inStock && !product.notified) {
-        const channel = client.channels.cache.find(c => c.name === product.channel);
-        if (channel) {
-          await channel.send({
-            content: `🛍️ **${product.name}** is now available!\n${product.url}`,
-          });
-        }
-        product.notified = true;
-      }
-
-    } catch (err) {
-      console.error(`Drop check failed for ${product.name}:`, err.message);
-    }
-  }
-
   await browser.close();
+  return availability;
 }
 
-cron.schedule('* * * * *', () => {
-  console.log('Checking all tracked product drops...');
-  checkRealDrops();
-});
+// Example scheduled check (for one product)
+const exampleProductUrl = 'https://www.mecca.com.au/example-product-page';
+const channelIdToNotify = 'YOUR_DISCORD_CHANNEL_ID'; // Replace with your real channel ID
 
-client.login(process.env.TOKEN);
+async function notifyProductStatus() {
+  const status = await checkProductAvailability(exampleProductUrl);
+  const channel = await client.channels.fetch(channelIdToNotify);
+  if (channel) {
+    channel.send(`Stock update for Mecca product: ${status}`);
+  }
+}
+
+// Runs check every 10 minutes (adjust as needed)
+setInterval(notifyProductStatus, 10 * 60 * 1000);
+
+// ==== HARDCODED TOKEN (SECURITY WARNING) ====
+client.login('MTM2MDEzOTIxNzEwNzE1NzE0NQ.GzVsYf.-B6KMoqXMFxds3WGlmhfpMpZAJv0uHKHvwHs5k');
