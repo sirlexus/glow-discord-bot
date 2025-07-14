@@ -1,40 +1,52 @@
-// glowbot/index.js
 const { Client, GatewayIntentBits } = require('discord.js');
-require('dotenv').config();
-const puppeteer = require('puppeteer');
 const cron = require('node-cron');
+const puppeteer = require('puppeteer');
+const products = require('./products.json');
+require('dotenv').config();
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages],
 });
 
-client.once('ready', () => {
-  console.log(`GlowBot is online as ${client.user.tag}`);
-  // Online status messages removed as requested
-});
+async function checkRealDrops() {
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    args: ['--no-sandbox'],
+  });
 
-client.on('messageCreate', message => {
-  if (message.author.bot) return;
-  const content = message.content.toLowerCase();
+  const page = await browser.newPage();
 
-  if (content.includes('makeup') || content.includes('drop')) {
-    message.channel.send('💄 Heads up! A makeup drop might be happening soon. Stay tuned!');
+  for (const product of products) {
+    try {
+      await page.goto(product.url, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
+      });
+
+      const content = await page.content();
+      const inStock = !content.includes('Sold Out') && !content.includes('Out of stock');
+
+      if (inStock && !product.notified) {
+        const channel = client.channels.cache.find(c => c.name === product.channel);
+        if (channel) {
+          await channel.send({
+            content: `🛍️ **${product.name}** is now available!\n${product.url}`,
+          });
+        }
+        product.notified = true;
+      }
+
+    } catch (err) {
+      console.error(`Drop check failed for ${product.name}:`, err.message);
+    }
   }
 
-  if (content === '!glow') {
-    message.channel.send('✨ GlowBot at your service! Type `makeup`, `drop`, or `!glow` for updates.');
-  }
+  await browser.close();
+}
+
+cron.schedule('* * * * *', () => {
+  console.log('Checking all tracked product drops...');
+  checkRealDrops();
 });
 
-const productLinks = [
-  {
-    name: 'Rare Beauty Blush',
-    url: 'https://www.mecca.com.au/rare-beauty-soft-pinch-liquid-blush/I-051524.html',
-    keyword: 'add-to-cart',
-    channel: '💄makeup-drops'
-  },
-  {
+client.login(process.env.TOKEN);
