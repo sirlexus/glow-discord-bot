@@ -6,9 +6,9 @@ The server layout follows the useful parts of Shiny Cardboard Society: a clear w
 
 ## Current delivery status
 
-The rebuilt code includes automated tests, persistent storage, server setup and deployment configuration. **A passing test run does not establish a live Discord connection or live retailer coverage.** Production launch still requires the owner to replace the previously exposed bot token, deploy an always running service, and complete the live checks in [the launch guide](docs/LAUNCH.md).
+The base worker connected to the existing Discord application on 3 November 2026 after the owner replaced its token. Existing public alert and community channels have been mapped in persistent storage. The bot currently lacks Manage Channels and Manage Roles, so automatic layout setup is blocked before any channel changes. **Passing local checks does not establish that a feature update is deployed or that retailer access works from the production host.** Complete the checks in [the launch guide](docs/LAUNCH.md).
 
-All six adapters are tested using controlled product data. Lila Beauty's public collection feed structure was also checked in the browser on 30 October 2026 and a factual sample is included under test fixtures. Currency verification and live access from the bot host remain unverified. Retailer pages that block access or omit exact product information are rejected or marked unconfirmed.
+All six adapters are tested using controlled product data. Current Lila Beauty collections and exact product responses, W cosmetics' public bestseller list, and public storefront currency metadata were checked on 3 November 2026. Public requests outside the production host do not establish access from Render. Retailer pages that block access or omit exact product information are rejected or marked unconfirmed.
 
 ## For a new member
 
@@ -33,6 +33,7 @@ You do not need to type a command. Public alert channels remain available to bro
 | Requests | A member submits a product link and exact shade or size for team review |
 | Preferences | Saved categories and product watches; optional direct messages |
 | Administration | Repeatable setup preview, product and source controls, sourced trend publishing and status |
+| Beauty discovery | Search saved 2026 reader picks, observed retailer favourites, dated editorial coverage and carefully labelled interest signals |
 | Reliability | SQLite persistence, delivery retries, source error backoff and checks for duplicate events |
 | Privacy | No general chat message reading; `/privacy` explains stored records and can remove them |
 
@@ -53,7 +54,20 @@ These are implemented adapters, not a claim that every product at each store is 
 
 Collection feeds inspect up to 100 recent products per selected source. They do not cover an entire retailer catalogue. A new product must be available to order to qualify for a new arrival alert. Initial source data establishes a silent baseline, so adding a source does not announce its existing catalogue.
 
-Trend posts use a team supplied source and explanation. Glowbot does not automatically scan TikTok, invent popularity scores or promise complete beauty market coverage.
+Trend discovery uses free public sources on the existing worker. It needs no additional subscription or API key. `/trends` searches saved metadata; it does not send member queries to a search provider. The welcome and help panels also provide a discovery button. Manual team posts remain available through `/publish`.
+
+| Discovery | Evidence and limit |
+| --- | --- |
+| 2026 reader picks | Ten named winners from Allure's dated 2026 Readers' Choice article. Reader votes are not sales counts or an Australian market ranking. |
+| Retailer favourites | The first 30 products in W cosmetics' displayed bestseller collection. Its current ordering is manually featured. |
+| Observed list movement | At least five positions higher in the displayed retailer list, using saved samples at least 24 hours apart. This measures merchandising movement, not growing sales. |
+| New coverage | Dated public RSS headlines from Allure and Cosmetics Business that match product and beauty terms. No paid article content is retrieved. |
+| Search interest | Google Trends Australia RSS topics that match specific beauty terms. The feed can contain no beauty topics. Approximate traffic is reported literally, not converted into sales or growth percentages. |
+| Upcoming | A public feed must explicitly state a future release or availability date with its year. A new listing, publication date or first observation is insufficient. Empty results are expected when no such announcement is verified. |
+
+The first successful snapshot is silent. Later discoveries can produce up to three automatic public posts per Melbourne calendar day, with a seven day cooldown for the same source item. Observations and delivery retries survive restarts. Most feeds are checked hourly; publisher RSS cache hints can require longer intervals, including Cosmetics Business's current 1,800 minute hint. Source failures preserve previous observations with their original timestamps and a warning. Blocked sources are backed off, not bypassed.
+
+Search results report the number of matching cached headlines and independent publisher domains. These are index counts, not proof of growing demand or complete media coverage. The scanner does not automatically scan TikTok or Instagram, invent popularity scores, claim historical retailer sales for 2026, or treat retailer listing dates as launch dates. The dated reader picks are documented at [Allure's 2026 Readers' Choice winners](https://www.allure.com/story/2026-readers-choice-winner-product-reviews).
 
 ## Team controls
 
@@ -71,6 +85,7 @@ The setup and catalogue controls require **Manage Server**. Ordinary members can
 | `/source list` | Review source configuration and failures |
 | `/source pause` | Pause or resume a source |
 | `/publish` | Publish a sourced beauty trend or release |
+| `/trends` | Search and browse saved discoveries; filter 2026 reader picks, retailer favourites, interest signals, new coverage or verified upcoming announcements |
 | `/status` | Check the connection, product checks and delivery queue |
 | `/retailers` | See the supported retailer adapters and their limits |
 
@@ -103,7 +118,8 @@ Render free web services sleep after idle periods and cannot attach persistent d
 3. Prices can change between checking and checkout. Only same currency price reductions are compared.
 4. Discord retries reduce missed delivery and short term duplicate sends. Absolute exactly once delivery is not guaranteed.
 5. A persistent disk is not an independent backup. Create a SQLite backup and copy it off the service regularly.
-6. No backup schedule, external monitoring subscription or recurring automation has been created by this repository.
+6. No recurring backup job, external monitoring subscription or separate scheduled task has been created by this repository.
+7. Automatic trend discovery runs inside the existing bot process. It is not a separate paid service, and no new API credentials are required.
 
 ## Official references
 
