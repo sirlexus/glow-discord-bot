@@ -1,0 +1,29 @@
+{
+  "captured_at": "2026-10-30",
+  "endpoint": "https://lilabeauty.com.au/collections/new-arrivals/products.json?limit=1",
+  "coverage": "Browser-visible public catalogue schema only; currency and bot-host connectivity remain unverified.",
+  "response": {
+    "products": [
+      {
+        "id": 15442337890366,
+        "title": "BeginS Pink Guava Glutathione Blemish Eye Gel Patch (6 Pairs)",
+        "handle": "begins-pink-guava-glutathione-blemish-eye-gel-patch-6-pairs",
+        "vendor": "Jung Saem Mool",
+        "variants": [
+          {
+            "id": 67956663451710,
+            "title": "Default Title",
+            "sku": "JSM201",
+            "available": false,
+            "price": "14.50"
+          }
+        ],
+        "images": [
+          {
+            "src": "https://cdn.shopify.com/s/files/1/0071/4653/7026/files/4894b642-3746-4f70-9a83-788078c422ba.jpg?v=1792895419"
+          }
+        ]
+      }
+    ]
+  }
+}
