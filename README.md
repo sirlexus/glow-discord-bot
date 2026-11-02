@@ -6,9 +6,11 @@ The server layout follows the useful parts of Shiny Cardboard Society: a clear w
 
 ## Current delivery status
 
-The base worker connected to the existing Discord application on 3 November 2026 after the owner replaced its token. Existing public alert and community channels have been mapped in persistent storage. The bot currently lacks Manage Channels and Manage Roles, so automatic layout setup is blocked before any channel changes. **Passing local checks does not establish that a feature update is deployed or that retailer access works from the production host.** Complete the checks in [the launch guide](docs/LAUNCH.md).
+Glowbot is live on the existing Discord application. The deployed source passed all 125 automated tests. The owner interface was used to complete the five channel groups, welcome panels and read only alert channels. Fifteen public channel destinations are configured in persistent storage. The existing private admin log restrictions were preserved. Normal operation does not require the bot to manage server roles or channels.
 
-All six adapters are tested using controlled product data. Current Lila Beauty collections and exact product responses, W cosmetics' public bestseller list, and public storefront currency metadata were checked on 3 November 2026. Public requests outside the production host do not establish access from Render. Retailer pages that block access or omit exact product information are rejected or marked unconfirmed.
+Production checks on 3 November 2026 verified all four free discovery feeds, 52 saved discoveries at activation, private browsing and filters, product search, exact variant watches, alert preferences and silent private delivery to the owner. Two Lila Beauty variants and both listed variants of W cosmetics' Shiseido Fino Hair Mask are being monitored. Restart persistence was checked. Other retailer adapters remain fixture tested until their own production checks pass.
+
+Discovery results identify their source and date. Retailer featured placement, reader votes, editorial coverage and search interest are distinct observations. Source history begins at activation. The current catalogue is a selected starting point, with product requests available for additions. See [the current activation record](docs/BUILD_STATUS.md) and [the operating guide](docs/LAUNCH.md).
 
 ## For a new member
 
