@@ -2,7 +2,7 @@
 
 This guide separates the tested implementation from the live checks required before inviting new members.
 
-Base activation was verified on 3 November 2026: the existing Render worker connected to Discord using the owner's replacement credential, and existing public alert and community channels were mapped in its persistent configuration. The bot currently lacks Manage Channels and Manage Roles, so `/setup apply:true` is blocked before layout changes. Trend feature changes still require their corresponding source commit to be deployed and checked live.
+Activation was verified on 3 November 2026. The worker is connected, the discovery update is deployed, and the owner interface completed the channel layout without granting global bot management permissions. Live source access, private controls, silent owner delivery and restart persistence passed. See [the activation record](BUILD_STATUS.md) for precise coverage and remaining validation limits. The bot's /setup apply control still requires Manage Channels and Manage Roles for future automated layout maintenance.
 
 ## Existing project
 
@@ -78,6 +78,8 @@ Render free web services spin down after idle periods and do not support persist
 Keep one instance because this implementation uses a single SQLite database and one monitor loop. Do not scale it horizontally without changing the storage and work coordination design.
 
 ## 4. Review and apply the server layout
+
+The current layout was completed through the owner interface. The steps below are for future bot-managed setup and require its stated management permissions. Normal operation uses the already configured channels and welcome panels.
 
 Once the new process is connected and the commands appear:
 
