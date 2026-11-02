@@ -8,6 +8,9 @@ const PERM = Object.freeze({
   ReadMessageHistory: 65536n, ManageRoles: 268435456n, CreatePublicThreads: 34359738368n,
   CreatePrivateThreads: 68719476736n, SendMessagesInThreads: 274877906944n,
 });
+const SETUP_PERMISSION_NAMES = Object.freeze([
+  'ManageChannels', 'ManageRoles', 'ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory',
+]);
 const CATEGORIES = [
   { key: 'welcome', name: 'Welcome & Rules' },
   { key: 'alerts', name: 'Beauty Alerts' },
@@ -70,8 +73,12 @@ async function setupGuild(guild, store, { dryRun = false } = {}) {
   if (dryRun) return { dryRun: true, plan, config };
 
   const me = guild.members.me || await guild.members.fetchMe();
-  for (const name of ['ManageChannels', 'ManageRoles', 'ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory']) {
-    if (!hasPermission(me, PERM[name])) throw new Error(`Glowbot needs ${name} to set up this server. Administrator is not required.`);
+  const missingPermissions = SETUP_PERMISSION_NAMES.filter(name => !hasPermission(me, PERM[name]));
+  if (missingPermissions.length) {
+    const publicMessage = `Glowbot needs these server permissions to set up channels: ${missingPermissions.join(', ')}. Administrator is not required.`;
+    throw Object.assign(new Error('Glowbot setup is missing required bot permissions.'), {
+      code: 'SETUP_PERMISSIONS', missingPermissions, publicMessage,
+    });
   }
   const everyoneId = guild.roles.everyone.id;
   const botId = me.id;
@@ -148,4 +155,4 @@ async function setupGuild(guild, store, { dryRun = false } = {}) {
   return { dryRun: false, plan, config };
 }
 
-module.exports = { setupGuild, CHANNELS, CATEGORIES, normalise };
+module.exports = { setupGuild, CHANNELS, CATEGORIES, normalise, SETUP_PERMISSION_NAMES };
