@@ -99,6 +99,32 @@ test('wrong guild cannot alter member subscriptions or run setup', async t => {
   assert.deepEqual(f.store.categories(GUILD, USER), []);
 });
 
+test('setup shows only a verified hardcoded permission preflight message', async t => {
+  const publicMessage = 'Glowbot needs these server permissions to set up channels: ManageChannels, ManageRoles. Administrator is not required.';
+  const error = Object.assign(new Error('private host detail do not reveal'), {
+    code: 'SETUP_PERMISSIONS', missingPermissions: ['ManageChannels', 'ManageRoles'], publicMessage,
+  });
+  const f = fixture(t, { setup: async () => { throw error; } });
+  const request = interaction({ kind: 'command', commandName: 'setup', manager: true, options: { apply: true } });
+  await f.handler(request);
+  assert.equal(last(request).content, publicMessage);
+  assert.doesNotMatch(JSON.stringify(request.calls), /private host detail/);
+});
+
+test('setup keeps arbitrary or forged error details out of member replies', async t => {
+  for (const properties of [
+    { code: 'SETUP_PERMISSIONS', missingPermissions: ['ManageChannels'], publicMessage: 'secret credential detail' },
+    { code: 'SETUP_PERMISSIONS', missingPermissions: ['secret credential detail'], publicMessage: 'secret credential detail' },
+    { code: 'OTHER', missingPermissions: ['ManageChannels'], publicMessage: 'secret credential detail' },
+  ]) {
+    const f = fixture(t, { setup: async () => { throw Object.assign(new Error('secret credential detail'), properties); } });
+    const request = interaction({ customId: 'glow:setup-apply', manager: true });
+    await f.handler(request);
+    assert.match(last(request).content, /could not finish/);
+    assert.doesNotMatch(JSON.stringify(request.calls), /secret credential detail/);
+  }
+});
+
 test('search pagination retains its product query and is scoped to the requesting user', async t => {
   const f = fixture(t);
   for (let n = 1; n <= 6; n++) f.store.addProduct(GUILD, product(n));
@@ -184,6 +210,136 @@ test('all guild commands serialize with unique names and restricted admin defaul
     assert.equal(all.find(c => c.name === name).default_member_permissions, '32');
   }
   assert.ok(all.some(c => c.name === 'retailers'));
+  const trends = all.find(c => c.name === 'trends');
+  assert.ok(trends);
+  assert.equal(trends.options.find(o => o.name === 'query').max_length, 100);
+  assert.deepEqual(trends.options.find(o => o.name === 'filter').choices.map(c => c.value), ['all', 'bestsellers', 'hits', 'rising', 'new', 'upcoming']);
+});
+
+test('ordinary members can privately search cached trends using a command or welcome button', async t => {
+  const calls = [];
+  const trends = { list(options) { calls.push(options); return [{ name: 'Rose tint', url: 'https://wcosmetics.com.au/products/rose-tint', kind: 'bestsellers', source: 'W cosmetics', position: 3, observedAt: Date.now(), evidence: 'Observed in the retailer bestseller collection.' }]; } };
+  const f = fixture(t, { trends });
+  const command = interaction({ kind: 'command', commandName: 'trends', options: { query: '  Rose  ', filter: 'bestsellers' } });
+  await f.handler(command);
+  assert.deepEqual(calls[0], { query: 'Rose', filter: 'bestsellers', limit: 200 });
+  assert.equal(last(command).flags, MessageFlags.Ephemeral);
+  assert.equal(last(command).embeds[0].title, 'Rose tint');
+  const button = interaction({ customId: 'glow:trends' });
+  await f.handler(button);
+  assert.deepEqual(calls[1], { query: '', filter: 'all', limit: 200 });
+  assert.equal(last(button).flags, MessageFlags.Ephemeral);
+  assert.equal(f.inspections, 0);
+  assert.equal(f.logs.length, 0);
+  const wrongGuild = interaction({ kind: 'command', commandName: 'trends', guildId: 'another-server' });
+  await f.handler(wrongGuild);
+  assert.equal(calls.length, 2);
+  assert.match(last(wrongGuild).content, /another server/);
+});
+
+test('trends reject forged filters and show an honest empty upcoming state', async t => {
+  const f = fixture(t);
+  const forged = interaction({ kind: 'command', commandName: 'trends', options: { filter: 'invented' } });
+  await f.handler(forged);
+  assert.match(last(forged).content, /listed discovery filters/);
+  const upcoming = interaction({ kind: 'command', commandName: 'trends', options: { filter: 'upcoming' } });
+  await f.handler(upcoming);
+  assert.match(last(upcoming).embeds[0].description, /No matching explicit dated upcoming announcement/);
+});
+
+test('private trend pages and filters retain the query and show the full cached result set', async t => {
+  const calls = [];
+  const records = Array.from({ length: 9 }, (_, n) => ({ name: `Rose discovery ${n + 1}`, kind: n < 5 ? 'hits' : 'new', source: 'A publisher', observedAt: Date.now(), evidence: 'Dated public evidence.' }));
+  const trends = {
+    list(options) { calls.push(options); return records.filter(record => options.filter === 'all' || record.kind === options.filter); },
+    summary({ query }) { assert.equal(query, 'Rose'); return { editorialArticles: 4, independentPublishers: 2, sourceCount: 3, latestObservedAt: Date.now(), message: 'Observed coverage, not measured demand.' }; },
+  };
+  const f = fixture(t, { trends });
+  const initial = interaction({ kind: 'command', commandName: 'trends', options: { query: 'Rose' } });
+  await f.handler(initial);
+  assert.equal(last(initial).embeds.length, 4);
+  assert.match(last(initial).embeds[0].footer.text, /Page 1 of 3/);
+  assert.match(last(initial).content, /4 editorial articles from 2 publisher domains; 3 sources/);
+  assert.ok(ids(last(initial)).includes('glow:trends-page:1'));
+  const second = interaction({ customId: 'glow:trends-page:1', messageId: initial.replyId });
+  await f.handler(second);
+  assert.equal(second.calls[0][0], 'update');
+  assert.equal(last(second).embeds[0].title, 'Rose discovery 5');
+  assert.ok(ids(last(second)).includes('glow:trends-page:0'));
+  const third = interaction({ customId: 'glow:trends-page:2', messageId: initial.replyId });
+  await f.handler(third);
+  assert.equal(last(third).embeds.length, 1);
+  assert.equal(last(third).embeds[0].title, 'Rose discovery 9');
+  const filtered = interaction({ kind: 'select', customId: 'glow:trends-filter', values: ['hits'], messageId: initial.replyId });
+  await f.handler(filtered);
+  assert.equal(filtered.calls[0][0], 'update');
+  assert.match(last(filtered).embeds[0].footer.text, /Page 1 of 2/);
+  assert.ok(last(filtered).components[0].components[0].options.find(option => option.value === 'hits').default);
+  const filteredNext = interaction({ customId: 'glow:trends-page:1', messageId: initial.replyId });
+  await f.handler(filteredNext);
+  assert.equal(last(filteredNext).embeds.length, 1);
+  assert.equal(last(filteredNext).embeds[0].title, 'Rose discovery 5');
+  assert.ok(calls.every(options => options.query === 'Rose' && options.limit === 200));
+  assert.equal(calls.at(-1).filter, 'hits');
+});
+
+test('trend sessions reject another user, public message updates and expired controls', async t => {
+  let now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  let reads = 0;
+  const f = fixture(t, { trends: { list() { reads++; return []; } } });
+  const initial = interaction({ kind: 'command', commandName: 'trends', options: { query: 'private query' } });
+  await f.handler(initial);
+  const other = interaction({ customId: 'glow:trends-page:1', messageId: initial.replyId, userId: 'other-user' });
+  await f.handler(other);
+  assert.equal(other.calls[0][0], 'reply');
+  assert.equal(last(other).flags, MessageFlags.Ephemeral);
+  assert.doesNotMatch(JSON.stringify(other.calls), /private query/);
+  const publicControl = interaction({ customId: 'glow:trends-page:1', messageId: initial.replyId, ephemeralMessage: false });
+  await f.handler(publicControl);
+  assert.equal(publicControl.calls[0][0], 'reply');
+  assert.match(last(publicControl).content, /own private discoveries/);
+  assert.equal(reads, 1);
+  now += 15 * 60_000;
+  const expired = interaction({ kind: 'select', customId: 'glow:trends-filter', values: ['hits'], messageId: initial.replyId });
+  await f.handler(expired);
+  assert.match(last(expired).content, /search expired/);
+  assert.equal(reads, 1);
+});
+
+test('trend session storage evicts the oldest search after one thousand private searches', async t => {
+  const f = fixture(t, { trends: { list() { return []; } } });
+  let first;
+  for (let n = 0; n < 1001; n++) {
+    const request = interaction({ kind: 'command', commandName: 'trends' });
+    await f.handler(request);
+    first ||= request;
+  }
+  const old = interaction({ customId: 'glow:trends-page:0', messageId: first.replyId });
+  await f.handler(old);
+  assert.match(last(old).content, /search expired/);
+});
+
+test('deferred DM trend pages carry their user scoped session into the new reply after membership checks', async t => {
+  let reads = 0;
+  const records = Array.from({ length: 6 }, (_, n) => ({ name: `Saved discovery ${n + 1}`, kind: 'hits', observedAt: Date.now() }));
+  const f = fixture(t, { trends: { list() { reads++; return records; } } });
+  const initial = interaction({ customId: 'glow:trends', guildId: null });
+  await f.handler(initial);
+  const next = interaction({ customId: 'glow:trends-page:1', guildId: null, messageId: initial.replyId });
+  await f.handler(next);
+  assert.equal(next.calls[0][0], 'deferReply');
+  assert.equal(last(next).embeds[0].title, 'Saved discovery 5');
+  const filtered = interaction({ kind: 'select', customId: 'glow:trends-filter', values: ['hits'], guildId: null, messageId: next.replyId });
+  await f.handler(filtered);
+  assert.equal(last(filtered).embeds[0].title, 'Saved discovery 1');
+  assert.deepEqual(f.memberships, [USER, USER, USER]);
+  assert.equal(reads, 3);
+  const other = interaction({ customId: 'glow:trends-page:1', guildId: null, messageId: filtered.replyId, userId: 'other-user' });
+  await f.handler(other);
+  assert.match(last(other).content, /search expired/);
+  assert.equal(reads, 3);
+  assert.equal(f.memberships.at(-1), 'other-user');
 });
 
 test('startup configuration handles legacy token alias, rejects conflict and validates limits', () => {
