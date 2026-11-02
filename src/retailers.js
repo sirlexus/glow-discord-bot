@@ -41,7 +41,7 @@ function validateProductUrl(value) {
   if (!retailerFor(url.hostname)) {
     throw new RetailerError('UNSUPPORTED_RETAILER', 'This retailer is not supported. Use /retailers to see supported stores.');
   }
-  if (/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:account|cart|checkouts?)(?:\/|$)/i.test(url.pathname)) {
+  if (/^\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?(?:account|cart(?:\.(?:js|json))?|checkouts?)(?:\/|$)/i.test(url.pathname)) {
     throw new RetailerError('PRODUCT_LINK_REQUIRED', 'Use a public product or collection link, not an account, cart or checkout link.');
   }
   for (const key of url.searchParams.keys()) {
@@ -96,9 +96,9 @@ async function pinnedDispatcher(hostname, signal) {
   } });
 }
 
-async function readLimited(response) {
+async function readLimited(response, limit = MAX_BYTES) {
   const length = Number(response.headers.get('content-length'));
-  if (length > MAX_BYTES) {
+  if (length > limit) {
     await response.body?.cancel?.();
     throw new RetailerError('RESPONSE_TOO_LARGE', 'The retailer response was too large to inspect safely.');
   }
@@ -108,14 +108,14 @@ async function readLimited(response) {
   for await (const chunk of response.body) {
     const buffer = Buffer.from(chunk);
     size += buffer.length;
-    if (size > MAX_BYTES) throw new RetailerError('RESPONSE_TOO_LARGE', 'The retailer response was too large to inspect safely.');
+    if (size > limit) throw new RetailerError('RESPONSE_TOO_LARGE', 'The retailer response was too large to inspect safely.');
     chunks.push(buffer);
   }
   return Buffer.concat(chunks).toString('utf8');
 }
 
 /** fetcher is an injectable, trusted fetch implementation used by offline tests. */
-async function requestText(input, fetcher) {
+async function requestText(input, fetcher, { maxBytes = MAX_BYTES } = {}) {
   let url = validateProductUrl(input);
   const retailer = retailerFor(url.hostname);
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
@@ -155,7 +155,7 @@ async function requestText(input, fetcher) {
         await response.body?.cancel?.();
         throw new RetailerError('UNSUPPORTED_RESPONSE', 'The retailer did not return product data.');
       }
-      return { text: await readLimited(response), url, contentType };
+      return { text: await readLimited(response, maxBytes), url, contentType };
     } catch (error) {
       if (error instanceof RetailerError) throw error;
       if (controller.signal.aborted) throw new RetailerError('TIMEOUT', 'The retailer check timed out. Availability is unknown.');
@@ -215,6 +215,34 @@ function validShopifyHandle(value) {
     value !== '.' && value !== '..' && !/[\p{C}\p{Z}/\\?#%]/u.test(value);
 }
 
+const storefrontCurrencies = new Map();
+async function storefrontCurrency(origin, prefix, fetcher) {
+  const homepage = new URL(`${prefix}/`, origin).href;
+  const cached = !fetcher && storefrontCurrencies.get(homepage);
+  if (cached && cached.expires > Date.now()) return cached.currency;
+  // Currency is public Shopify storefront metadata. Never call cart.js, which
+  // these retailers disallow for crawlers, or infer currency from the domain.
+  const response = await requestText(homepage, fetcher, { maxBytes: 4 * 1024 * 1024 });
+  const $ = require('cheerio').load(response.text);
+  const observed = new Set();
+  for (const script of $('script').toArray()) {
+    const assignments = $(script).text().matchAll(/(?:^|[;\r\n])\s*(?:window\.)?Shopify\.currency\s*=\s*(\{[^{}]{1,1000}\})\s*;/g);
+    for (const assignment of assignments) {
+      let value;
+      try { value = JSON.parse(assignment[1]); } catch { continue; }
+      const active = typeof value.active === 'string' && currency(value.active);
+      if (active) observed.add(active);
+    }
+  }
+  if (observed.size !== 1) throw new RetailerError('NO_RELIABLE_CURRENCY', 'The public storefront did not identify one reliable price currency.');
+  const active = [...observed][0];
+  if (!fetcher) {
+    if (storefrontCurrencies.size >= 32) storefrontCurrencies.delete(storefrontCurrencies.keys().next().value);
+    storefrontCurrencies.set(homepage, { currency: active, expires: Date.now() + 60 * 60_000 });
+  }
+  return active;
+}
+
 async function inspectShopify(url, options, retailer) {
   const match = url.pathname.match(/^(?:(\/[a-z]{2}(?:-[a-z]{2})?))?(?:\/collections\/[^/]+)?\/products\/([^/]+?)(?:\.js)?\/?$/i);
   if (!match) throw new RetailerError('PRODUCT_LINK_REQUIRED', 'Use a product page link, not a collection or store homepage.');
@@ -247,10 +275,7 @@ async function inspectShopify(url, options, retailer) {
   if (typeof variant.available !== 'boolean') throw new RetailerError('NO_RELIABLE_AVAILABILITY', 'This product does not have reliable availability data.');
   let priceCurrency = currency(product.currency);
   if (!priceCurrency) {
-    // Shopify prices use the customer's presentment currency. Never assume AUD
-    // just because a domain is Australian. cart.js is a read-only currency check.
-    const cart = await requestText(new URL(`${prefix}/cart.js`, response.url.origin), options.fetcher);
-    priceCurrency = currency(parseJson(cart.text).currency);
+    priceCurrency = await storefrontCurrency(response.url.origin, prefix, options.fetcher);
   }
   if (!priceCurrency) throw new RetailerError('NO_RELIABLE_CURRENCY', 'The retailer did not identify the product currency.');
   const price = Number.isSafeInteger(variant.price) ? money(variant.price, true) : null;
@@ -436,8 +461,7 @@ async function inspectCollection(value, options = {}) {
   // Currency is presentment dependent, so verify it even on Australian domains.
   // An explicitly empty snapshot is valid and does not need a price currency.
   if (products.length) {
-    const cart = await requestText(new URL(`${prefix}/cart.js`, response.url.origin), options.fetcher);
-    const priceCurrency = currency(parseJson(cart.text).currency);
+    const priceCurrency = await storefrontCurrency(response.url.origin, prefix, options.fetcher);
     if (!priceCurrency) throw new RetailerError('NO_RELIABLE_CURRENCY', 'The retailer did not identify the collection price currency.');
     for (const product of products) product.currency = priceCurrency;
   }
