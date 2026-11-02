@@ -2,6 +2,8 @@
 
 This guide separates the tested implementation from the live checks required before inviting new members.
 
+Base activation was verified on 3 November 2026: the existing Render worker connected to Discord using the owner's replacement credential, and existing public alert and community channels were mapped in its persistent configuration. The bot currently lacks Manage Channels and Manage Roles, so `/setup apply:true` is blocked before layout changes. Trend feature changes still require their corresponding source commit to be deployed and checked live.
+
 ## Existing project
 
 | Item | Existing value |
@@ -128,6 +130,18 @@ Use the owner account and a second ordinary member account. The ordinary member 
 Test delivery mechanics in a private test channel or a separate test server with controlled data and the automated tests. **Do not fabricate a public retailer restock or price drop to demonstrate that an alert sends.**
 
 Before calling notifications live, verify a genuine retailer response from the deployed host and an end to end test delivery. Before inviting members, verify the ordinary member experience on both desktop and mobile.
+
+### Verify free beauty discovery
+
+1. Confirm `/trends` is registered and private results work for an ordinary member. Search `2026 Laneige` with the 2026 reader picks filter; inspect the dated Allure reader vote source. Browse the other results with page and filter controls.
+2. Confirm the existing trending beauty channel is mapped. No channel mapping or trend refresh should grant the bot extra permissions.
+3. Check that initial successful snapshots produce no automatic posts. Existing reader picks must not be announced as newly released products.
+4. Check public source access from the worker: W cosmetics' displayed bestseller collection, Allure and Cosmetics Business RSS, and Google Trends Australia RSS. Google can correctly return zero matching beauty topics.
+5. Compare saved retailer list snapshots only after at least 24 hours. Movement must be described as a change in a manually featured retailer list, never a sales ranking or proof of increasing demand. Query counts identify cached matching headlines and independent publisher domains, not complete market activity.
+6. Upcoming results require an explicit future release or availability date including the year. An already reached date must disappear from upcoming results and must not be posted late as an upcoming release.
+7. Verify the three post Melbourne daily budget, seven day item cooldown, restart persistence and retry records using controlled offline tests. Do not fabricate public popularity or restock claims as a test.
+
+There are no additional API subscriptions or keys for these sources. They use public metadata on the existing worker. The scanner does not read paid articles, automate blocked Google News search feeds, scrape social accounts or bypass access challenges. It honours publisher RSS cache hints; Cosmetics Business currently specifies 1,800 minutes, which means 30 hours. Stock currency checks use bounded public Shopify storefront metadata rather than crawler-disallowed cart endpoints.
 
 ## 7. Verify restart persistence
 
