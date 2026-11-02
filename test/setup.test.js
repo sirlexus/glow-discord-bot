@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { setupGuild, CHANNELS } = require('../src/setup');
-const { homePanel, publicPreferencesPanel, preferencesPanel, productCards, alertPayload } = require('../src/ui');
+const { homePanel, publicPreferencesPanel, preferencesPanel, productCards, alertPayload, trendsPanel } = require('../src/ui');
 
 function fixture() {
   const channels = new Map();
@@ -100,9 +100,27 @@ test('setup adopts old channels, preserves unrelated content and reruns without 
 test('setup does not partially apply when required permissions are absent', async () => {
   const f = fixture();
   f.denyPermissions();
-  await assert.rejects(setupGuild(f.guild, f.store), /needs ManageChannels/);
+  await assert.rejects(setupGuild(f.guild, f.store), error => {
+    assert.equal(error.code, 'SETUP_PERMISSIONS');
+    assert.deepEqual(error.missingPermissions, ['ManageChannels', 'ManageRoles', 'ViewChannel', 'SendMessages', 'EmbedLinks', 'ReadMessageHistory']);
+    assert.equal(error.publicMessage, 'Glowbot needs these server permissions to set up channels: ManageChannels, ManageRoles, ViewChannel, SendMessages, EmbedLinks, ReadMessageHistory. Administrator is not required.');
+    return true;
+  });
   assert.equal(f.created.length, 0);
   assert.equal(f.writes, 0);
+});
+
+test('setup permission preflight reports every missing permission and only the missing names', async () => {
+  const f = fixture();
+  f.guild.members.me.permissions.has = permission => ![16n, 268435456n].includes(permission);
+  await assert.rejects(setupGuild(f.guild, f.store), error => {
+    assert.deepEqual(error.missingPermissions, ['ManageChannels', 'ManageRoles']);
+    assert.equal(error.publicMessage, 'Glowbot needs these server permissions to set up channels: ManageChannels, ManageRoles. Administrator is not required.');
+    return error.code === 'SETUP_PERMISSIONS';
+  });
+  assert.equal(f.created.length, 0);
+  assert.equal(f.writes, 0);
+  assert.equal(f.sent, 0);
 });
 
 test('new private Team and logs allow non-administrator staff without exposing them to everyone', async () => {
@@ -147,9 +165,70 @@ test('member panels provide a no-command path and suppress mentions', () => {
   assert.match(welcome.embeds[0].description, /<#rules-id>/);
   assert.deepEqual(welcome.allowedMentions, { parse: [] });
   assert.deepEqual(welcome.components[0].components.map(b => b.custom_id), ['glow:preferences', 'glow:search', 'glow:request', 'glow:mine', 'glow:help']);
+  assert.equal(welcome.components[1].components[0].custom_id, 'glow:trends');
   const choices = preferencesPanel(['makeup']);
   assert.equal(choices.components[0].components[0].min_values, 0);
   assert.equal(choices.components[0].components[0].options.find(o => o.value === 'makeup').default, true);
+});
+
+test('trend cards show literal list movement and dates without claiming measured sales', () => {
+  const now = Date.now();
+  const card = trendsPanel([{ name: 'A retailer favourite', url: 'https://wcosmetics.com.au/products/item', sourceUrl: 'https://wcosmetics.com.au/collections/best-seller', source: '@everyone Shop', kind: 'rising', position: 3, previousPosition: 12, previousObservedAt: now - 86400000, observedAt: now, evidence: 'Moved higher in the displayed retailer list.' }]);
+  assert.match(card.embeds[0].description, /Retailer list position: 12 at <t:\d+:f> → 3 at <t:\d+:f>/);
+  assert.match(card.content, /not measured sales/);
+  assert.match(card.content, /New means newly observed/);
+  assert.ok(!card.embeds[0].description.includes('@everyone'));
+  assert.deepEqual(card.allowedMentions, { parse: [] });
+});
+
+test('trend cards remain within Discord embed limits and reject unsafe links', () => {
+  const records = Array.from({ length: 10 }, () => ({ name: 'N'.repeat(500), source: 'S'.repeat(500), evidence: 'E'.repeat(5000), kind: 'new', observedAt: Date.now(), url: 'javascript:alert(1)', sourceUrl: 'https://user:secret@example.com/' }));
+  const cards = trendsPanel(records, { query: '@everyone _query_' });
+  assert.equal(cards.embeds.length, 4);
+  assert.ok(cards.embeds.every(e => e.title.length <= 200 && e.description.length <= 1100 && !e.url));
+  const combined = cards.content.length + cards.embeds.reduce((n, e) => n + e.title.length + e.description.length, 0);
+  assert.ok(combined <= 6000);
+  assert.ok(!JSON.stringify(cards).includes('secret'));
+});
+
+test('reader picks and search interest signals use their own evidence labels', () => {
+  const now = Date.now();
+  const cards = trendsPanel([
+    { name: 'Reader picked mascara', kind: 'hits', source: 'Allure', observedAt: now, evidence: 'Listed in the 2026 reader voted awards.' },
+    { name: 'Beauty search topic', kind: 'rising', source: 'Google Trends AU', observedAt: now, evidence: 'Reported by the public search interest feed.' },
+  ]);
+  assert.match(cards.embeds[0].description, /2026 reader voted winner/);
+  assert.match(cards.embeds[1].description, /Observed interest signal/);
+  assert.doesNotMatch(cards.embeds[1].description, /Moved higher|Retailer list position/);
+  assert.match(cards.content, /cached source snapshot/);
+  assert.match(trendsPanel([], { filter: 'hits' }).embeds[0].description, /No matching verified 2026 reader voted winner/);
+});
+
+test('trend browsing paginates four records and renders bounded literal coverage counts', () => {
+  const records = Array.from({ length: 9 }, (_, n) => ({ name: `Saved result ${n + 1}`, kind: 'new', observedAt: Date.now(), evidence: 'A public headline.' }));
+  const summary = { editorialArticles: 7, independentPublishers: 2, sourceCount: 4, latestObservedAt: Date.now(), message: '@everyone ' + 'M'.repeat(5000) };
+  const first = trendsPanel(records, { query: 'Rose', filter: 'new', summary, interactive: true });
+  assert.equal(first.embeds.length, 4);
+  assert.match(first.embeds[0].footer.text, /Page 1 of 3/);
+  assert.equal(first.components[0].components[0].custom_id, 'glow:trends-filter');
+  assert.equal(first.components[1].components[0].custom_id, 'glow:trends-page:1');
+  assert.match(first.content, /7 editorial articles from 2 publisher domains; 4 sources/);
+  assert.ok(first.content.length <= 1000);
+  assert.ok(!first.content.includes('@everyone'));
+  const last = trendsPanel(records, { page: 2, interactive: true });
+  assert.equal(last.embeds.length, 1);
+  assert.equal(last.embeds[0].title, 'Saved result 9');
+  assert.equal(last.components[1].components[0].custom_id, 'glow:trends-page:1');
+  const invalid = trendsPanel([], { summary: { editorialArticles: -1, independentPublishers: Infinity, sourceCount: '999', message: '' } });
+  assert.match(invalid.content, /0 editorial articles from 0 publisher domains; 0 sources/);
+  const automatic = trendsPanel([records[0]]);
+  assert.deepEqual(automatic.components, []);
+});
+
+test('unavailable trend sources display only a fixed saved observation notice', () => {
+  const cards = trendsPanel([{ name: 'Saved find', kind: 'new', observedAt: Date.now(), sourceUnavailable: true, sourceError: 'private error detail', evidence: 'Saved public evidence.' }]);
+  assert.match(cards.embeds[0].description, /Source temporarily unavailable\. Showing the last saved observation\./);
+  assert.doesNotMatch(JSON.stringify(cards), /private error detail/);
 });
 
 test('public preferences panel opens private controls without exposing member choices', () => {
