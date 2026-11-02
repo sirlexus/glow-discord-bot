@@ -191,6 +191,20 @@ test('trend cards remain within Discord embed limits and reject unsafe links', (
   assert.ok(!JSON.stringify(cards).includes('secret'));
 });
 
+test('trend results sharing a source keep all four cards without duplicate embed URLs', () => {
+  const source = 'https://www.allure.com/story/2026-readers-choice-winner-product-reviews';
+  const names = ['Amika dry shampoo', 'CeraVe cleanser', 'e.l.f. skin tint', 'Haus Labs foundation'];
+  const cards = trendsPanel(names.map(name => ({ name, kind: 'hits', source: 'Allure', sourceUrl: source, url: source, observedAt: Date.now() })));
+  assert.deepEqual(cards.embeds.map(card => card.title), names);
+  assert.ok(cards.embeds.every(card => !Object.hasOwn(card, 'url')));
+  assert.ok(cards.embeds.every(card => card.description.includes(`[View source](${source})`)));
+  assert.ok(cards.embeds.every(card => !card.description.includes('#')));
+  const distinct = trendsPanel([{ name: 'Retailer product', kind: 'bestsellers', position: 1, sourceUrl: 'https://wcosmetics.com.au/collections/best-seller', url: 'https://wcosmetics.com.au/products/item', observedAt: Date.now() }]);
+  assert.match(distinct.embeds[0].description, /\[View source\]\(https:\/\/wcosmetics.com.au\/collections\/best-seller\)/);
+  assert.match(distinct.embeds[0].description, /\[View product\]\(https:\/\/wcosmetics.com.au\/products\/item\)/);
+  assert.ok(!Object.hasOwn(distinct.embeds[0], 'url'));
+});
+
 test('reader picks and search interest signals use their own evidence labels', () => {
   const now = Date.now();
   const cards = trendsPanel([
