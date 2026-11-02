@@ -58,12 +58,11 @@ test('private query keys are refused without exposing their values', () => {
   }
 });
 
-test('private account, cart and checkout routes are refused while internal currency endpoint remains safe', () => {
-  for (const path of ['/account', '/account/login', '/cart', '/cart/add', '/checkout', '/checkouts/private-session', '/en-au/cart']) {
+test('private account, cart and checkout routes including crawler-disallowed cart data are refused', () => {
+  for (const path of ['/account', '/account/login', '/cart', '/cart.js', '/cart.json', '/cart/add', '/checkout', '/checkouts/private-session', '/en-au/cart', '/en-au/cart.js']) {
     assert.throws(() => validateProductUrl(`https://lilabeauty.com.au${path}`), error =>
       error instanceof RetailerError && error.code === 'PRODUCT_LINK_REQUIRED');
   }
-  assert.equal(validateProductUrl('https://lilabeauty.com.au/cart.js').pathname, '/cart.js');
 });
 
 test('Shopify uses selected variant, not overall product availability or minimum price', async () => {
@@ -120,22 +119,41 @@ test('Shopify exact SKU or title selection works; unknown variant is never silen
   await rejectsCode(inspectProduct(shopUrl, { variant: 'missing', fetcher: async () => response(shopProduct()) }), 'VARIANT_NOT_FOUND');
 });
 
-test('Shopify single variant establishes currency with read-only cart data', async () => {
+test('Shopify single variant establishes currency from public storefront metadata without cart requests', async () => {
   const calls = [];
   const product = shopProduct({ currency: undefined, variants: [shopProduct().variants[0]] });
   const result = await inspectProduct(shopUrl, { fetcher: async url => {
     calls.push(url);
-    return response(url.endsWith('/cart.js') ? { currency: 'NZD' } : product);
+    return response(url.endsWith('/') ? '<script>Shopify.currency = {"active":"NZD","rate":"1.0"};</script>' : product);
   } });
   assert.equal(result.currency, 'NZD');
-  assert.equal(calls[1], 'https://lilabeauty.com.au/cart.js');
+  assert.equal(calls[1], 'https://lilabeauty.com.au/');
+  assert.ok(calls.every(url => !url.includes('/cart')));
+});
+
+test('storefront currency rejects conflicting, body-only or missing metadata instead of assuming AUD', async () => {
+  const product = shopProduct({ currency: undefined, variants: [shopProduct().variants[0]] });
+  for (const html of [
+    '<script>Shopify.currency = {"active":"AUD"};\nShopify.currency = {"active":"NZD"};</script>',
+    '<p>Shopify.currency = {"active":"AUD"};</p>',
+    '<script>Shopify.currency = {"rate":"1.0"};</script>',
+  ]) await rejectsCode(inspectProduct(shopUrl, { fetcher: async url => response(url.endsWith('/') ? html : product) }), 'NO_RELIABLE_CURRENCY');
+});
+
+test('public storefront currency has a four MiB bound while ordinary product responses retain their lower bound', async () => {
+  const product = shopProduct({ currency: undefined, variants: [shopProduct().variants[0]] });
+  const largeButBounded = '<script>Shopify.currency = {"active":"AUD","rate":"1.0"};</script>' + ' '.repeat(3 * 1024 * 1024);
+  const result = await inspectProduct(shopUrl, { fetcher: async url => response(url.endsWith('/') ? largeButBounded : product) });
+  assert.equal(result.currency, 'AUD');
+  await rejectsCode(inspectProduct(shopUrl, { fetcher: async url => url.endsWith('/') ?
+    response('small', 200, { 'content-length': String(4 * 1024 * 1024 + 1) }) : response(product) }), 'RESPONSE_TOO_LARGE');
 });
 
 test('Shopify rejects returned product mismatch, unreliable availability, malformed prices and currency', async () => {
   await rejectsCode(inspectProduct(`${shopUrl}?variant=123`, { fetcher: async () => response(shopProduct({ handle: 'other' })) }), 'PRODUCT_MISMATCH');
   await rejectsCode(inspectProduct(shopUrl, { fetcher: async () => response(shopProduct({ variants: [{ id: 123, title: 'Rose', price: 2599 }] })) }), 'NO_RELIABLE_AVAILABILITY');
   await rejectsCode(inspectProduct(shopUrl, { fetcher: async () => response(shopProduct({ variants: [{ id: 123, title: 'Rose', price: 25.99, available: true }] })) }), 'NO_RELIABLE_PRICE');
-  await rejectsCode(inspectProduct(shopUrl, { fetcher: async url => response(url.endsWith('/cart.js') ? { currency: 'AUD bad' } : shopProduct({ currency: undefined, variants: [shopProduct().variants[0]] })) }), 'NO_RELIABLE_CURRENCY');
+  await rejectsCode(inspectProduct(shopUrl, { fetcher: async url => response(url.endsWith('/') ? '<script>Shopify.currency = {"active":"AUD bad"};</script>' : shopProduct({ currency: undefined, variants: [shopProduct().variants[0]] })) }), 'NO_RELIABLE_CURRENCY');
 });
 
 test('JSON-LD extracts only exact product offer and structured availability', async () => {
@@ -239,7 +257,7 @@ function collectionProduct(overrides = {}) {
 function collectionFetch(products, calls = []) {
   return async url => {
     calls.push(url);
-    return response(url.endsWith('/cart.js') ? { currency: 'AUD' } : { products });
+    return response(url.endsWith('/') ? '<script>Shopify.currency = {"active":"AUD","rate":"1.0"};</script>' : { products });
   };
 }
 
@@ -251,7 +269,7 @@ test('collection discovery reads bounded feed and returns exact variant observat
   assert.equal(result.url, collectionUrl);
   assert.equal(result.source, 'shopify_collection');
   assert.equal(result.products.length, 2);
-  assert.deepEqual(calls, [`${collectionUrl}/products.json?limit=100`, 'https://lilabeauty.com.au/cart.js']);
+  assert.deepEqual(calls, [`${collectionUrl}/products.json?limit=100`, 'https://lilabeauty.com.au/']);
   assert.deepEqual(result.products.map(item => [item.variantId, item.price, item.availability, item.currency]), [
     ['112', 25.99, 'in_stock', 'AUD'], ['113', 27.99, 'out_of_stock', 'AUD'],
   ]);
@@ -321,7 +339,7 @@ test('collection discovery keeps locale and refuses a redirect to another collec
     fetcher: collectionFetch([collectionProduct()], calls),
   });
   assert.equal(result.url, 'https://lilabeauty.com.au/en-au/collections/new-arrivals');
-  assert.equal(calls[1], 'https://lilabeauty.com.au/en-au/cart.js');
+  assert.equal(calls[1], 'https://lilabeauty.com.au/en-au/');
   assert.equal(result.products[0].url, 'https://lilabeauty.com.au/en-au/products/new-lip-tint?variant=112');
   await rejectsCode(inspectCollection(collectionUrl, { fetcher: async url => url.includes('new-arrivals') ?
     response('', 302, { location: '/collections/all/products.json?limit=100' }) : response({ products: [] }) }), 'COLLECTION_MISMATCH');
@@ -344,6 +362,6 @@ test('collection discovery enforces product and variant bounds', async () => {
 });
 
 test('collection discovery rejects unconfirmed currency and blocked feeds', async () => {
-  await rejectsCode(inspectCollection(collectionUrl, { fetcher: async url => response(url.endsWith('/cart.js') ? {} : { products: [collectionProduct()] }) }), 'NO_RELIABLE_CURRENCY');
+  await rejectsCode(inspectCollection(collectionUrl, { fetcher: async url => response(url.endsWith('/') ? '<html>No currency metadata</html>' : { products: [collectionProduct()] }) }), 'NO_RELIABLE_CURRENCY');
   await rejectsCode(inspectCollection(collectionUrl, { fetcher: async () => response('limited', 429) }), 'RETAILER_BLOCKED');
 });
