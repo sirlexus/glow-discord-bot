@@ -208,17 +208,28 @@ function exactValue(value, selected) {
   return value != null && String(value).trim().toLowerCase() === String(selected).trim().toLowerCase();
 }
 
+function validShopifyHandle(value) {
+  // Retailer handles can contain Unicode and underscores. Keep each handle to
+  // one path segment, then encode it before constructing any request URL.
+  return typeof value === 'string' && value.length > 0 && value.length <= 500 &&
+    value !== '.' && value !== '..' && !/[\p{C}\p{Z}/\\?#%]/u.test(value);
+}
+
 async function inspectShopify(url, options, retailer) {
   const match = url.pathname.match(/^(?:(\/[a-z]{2}(?:-[a-z]{2})?))?(?:\/collections\/[^/]+)?\/products\/([^/]+?)(?:\.js)?\/?$/i);
   if (!match) throw new RetailerError('PRODUCT_LINK_REQUIRED', 'Use a product page link, not a collection or store homepage.');
   const prefix = match[1] || '';
-  const endpoint = new URL(`${prefix}/products/${match[2]}.js`, url.origin);
+  let handle;
+  try { handle = decodeURIComponent(match[2]); } catch { /* Refuse malformed encoding below. */ }
+  if (!validShopifyHandle(handle)) throw new RetailerError('PRODUCT_LINK_REQUIRED', 'Use a valid public product page link.');
+  const encodedHandle = encodeURIComponent(handle);
+  const endpoint = new URL(`${prefix}/products/${encodedHandle}.js`, url.origin);
   const response = await requestText(endpoint, options.fetcher);
   const product = parseJson(response.text);
   if (!product || !product.title || !Array.isArray(product.variants) || !product.variants.length) {
     throw new RetailerError('NO_PRODUCT_DATA', 'The retailer did not provide an identifiable product and its variants.');
   }
-  if (!product.handle || product.handle !== match[2]) {
+  if (!validShopifyHandle(product.handle) || product.handle !== handle) {
     throw new RetailerError('PRODUCT_MISMATCH', 'The retailer returned a different product. Availability is unknown.');
   }
   const selected = selectionValue(url, options.variant);
@@ -244,7 +255,7 @@ async function inspectShopify(url, options, retailer) {
   if (!priceCurrency) throw new RetailerError('NO_RELIABLE_CURRENCY', 'The retailer did not identify the product currency.');
   const price = Number.isSafeInteger(variant.price) ? money(variant.price, true) : null;
   if (price === null) throw new RetailerError('NO_RELIABLE_PRICE', 'The retailer did not provide a reliable variant price.');
-  const canonical = new URL(`${prefix}/products/${match[2]}`, response.url.origin);
+  const canonical = new URL(`${prefix}/products/${encodedHandle}`, response.url.origin);
   canonical.searchParams.set('variant', String(variant.id));
   return {
     url: canonical.href, retailer: retailer.name, name: clean(product.title), brand: clean(product.vendor) || null,
@@ -392,7 +403,7 @@ async function inspectCollection(value, options = {}) {
   const seen = new Set();
   for (const product of data.products) {
     if (!product || !/^\d+$/.test(String(product.id)) || !product.title ||
-      typeof product.handle !== 'string' || !/^[a-z0-9][a-z0-9-]*$/i.test(product.handle) ||
+      !validShopifyHandle(product.handle) ||
       !Array.isArray(product.variants) || !product.variants.length) {
       throw new RetailerError('INVALID_COLLECTION_PRODUCT', 'A collection product has incomplete identity or variant data. No catalogue changes were accepted.');
     }
@@ -404,7 +415,7 @@ async function inspectCollection(value, options = {}) {
       if (price === null) {
         throw new RetailerError('NO_RELIABLE_PRICE', 'A collection variant has no reliable price. No catalogue changes were accepted.');
       }
-      const productUrl = new URL(`${prefix}/products/${product.handle}`, response.url.origin);
+      const productUrl = new URL(`${prefix}/products/${encodeURIComponent(product.handle)}`, response.url.origin);
       productUrl.searchParams.set('variant', String(variant.id));
       if (seen.has(productUrl.href)) {
         throw new RetailerError('DUPLICATE_COLLECTION_VARIANT', 'The collection returned duplicate variant identities. No catalogue changes were accepted.');
