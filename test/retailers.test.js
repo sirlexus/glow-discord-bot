@@ -82,6 +82,32 @@ test('Shopify uses selected variant, not overall product availability or minimum
   assert.deepEqual(calls, [`${shopUrl}.js`]);
 });
 
+test('Shopify matches a decoded Unicode handle exactly and preserves its encoded product URL', async () => {
+  const handle = 'vital-hydra-solution™-hydrating-lip-mask';
+  const encodedUrl = `https://lilabeauty.com.au/products/${encodeURIComponent(handle)}`;
+  const calls = [];
+  const product = shopProduct({ handle });
+  const result = await inspectProduct(`${encodedUrl}?variant=456`, { fetcher: async url => {
+    calls.push(url);
+    return response(product);
+  } });
+  assert.deepEqual(calls, [`${encodedUrl}.js`]);
+  assert.equal(result.url, `${encodedUrl}?variant=456`);
+  assert.equal(result.variantId, '456');
+  await rejectsCode(inspectProduct(`${encodedUrl}?variant=456`, {
+    fetcher: async () => response({ ...product, handle: `${handle}-different` }),
+  }), 'PRODUCT_MISMATCH');
+});
+
+test('Shopify refuses encoded path separators and malformed handles before making a request', async () => {
+  let calls = 0;
+  const fetcher = async () => { calls++; return response(shopProduct()); };
+  for (const handle of ['item%2Fother', 'item%5Cother', 'item%3Fprivate', 'item%23private', 'item%25encoded', 'item%00', 'item%ZZ']) {
+    await rejectsCode(inspectProduct(`https://lilabeauty.com.au/products/${handle}`, { fetcher }), 'PRODUCT_LINK_REQUIRED');
+  }
+  assert.equal(calls, 0);
+});
+
 test('Shopify refuses unselected multiple variants and reports available options', async () => {
   await assert.rejects(inspectProduct(shopUrl, { fetcher: async () => response(shopProduct()) }), error =>
     error.code === 'VARIANT_REQUIRED' && error.details.variants.length === 2);
@@ -231,6 +257,40 @@ test('collection discovery reads bounded feed and returns exact variant observat
   ]);
   assert.equal(result.products[0].url, 'https://lilabeauty.com.au/products/new-lip-tint?variant=112');
   assert.equal(result.products[0].image, 'https://cdn.shopify.com/new-lip-tint.jpg');
+});
+
+test('a full collection snapshot accepts real retailer Unicode and underscore handle shapes', async () => {
+  // These two handle shapes were observed in Lila's 100-product makeup and
+  // skincare feeds on 3 November 2026. One valid item must not reject a feed.
+  const products = Array.from({ length: 98 }, (_, index) => collectionProduct({
+    id: index + 1, handle: `product-${index + 1}`,
+    variants: [{ id: index + 1000, title: 'Default Title', price: '1.00', available: true }],
+  }));
+  products.push(collectionProduct({ id: 8200640069694, handle: 'vital-hydra-solution™-hydrating-lip-mask',
+    title: 'Vital Hydra Solution Hydrating Lip Mask', variants: [
+      { id: 43157081423934, title: 'Bubble Gum', sku: 'DRJ198', price: '29.50', available: true },
+      { id: 43157080244286, title: 'Original', sku: 'DRJ197', price: '29.50', available: true },
+    ] }));
+  products.push(collectionProduct({ id: 15433027420222, handle: 'fermentation-eye-cream-mini-10g-sca_clone_freegift',
+    title: 'Fermentation Eye Cream Mini 10g', variants: [
+      { id: 67917063716926, title: 'Default Title', sku: 'BTN130', price: '0.00', available: true },
+    ] }));
+  const result = await inspectCollection(collectionUrl, { fetcher: collectionFetch(products) });
+  assert.equal(result.products.length, 101);
+  const unicode = result.products.find(product => product.variantId === '43157081423934');
+  assert.equal(unicode.url, 'https://lilabeauty.com.au/products/vital-hydra-solution%E2%84%A2-hydrating-lip-mask?variant=43157081423934');
+  assert.equal(unicode.price, 29.5);
+  assert.equal(unicode.currency, 'AUD');
+  const underscore = result.products.find(product => product.variantId === '67917063716926');
+  assert.equal(underscore.url, 'https://lilabeauty.com.au/products/fermentation-eye-cream-mini-10g-sca_clone_freegift?variant=67917063716926');
+});
+
+test('collection handles cannot inject another URL, path, query or fragment', async () => {
+  for (const handle of ['//other.example/item', '../account', '.', '..', 'item/other', 'item\\other', 'item?token=secret', 'item#part', 'item%2fother', 'item\u0000', 'item with space']) {
+    await rejectsCode(inspectCollection(collectionUrl, {
+      fetcher: collectionFetch([collectionProduct({ handle })]),
+    }), 'INVALID_COLLECTION_PRODUCT');
+  }
 });
 
 test('collection parser discovers later product identities independently of initial snapshot', async () => {
