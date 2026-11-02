@@ -1,0 +1,30 @@
+# Review the paid service and disk cost in Render before creating this worker.
+# For an EXISTING service, update that service's settings instead of duplicating it.
+services:
+  - type: worker
+    name: glowbot
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci --ignore-scripts && npm run check && npm test
+    startCommand: npm start
+    numInstances: 1
+    autoDeployTrigger: off
+    maxShutdownDelaySeconds: 60
+    disk:
+      name: glowbot-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 24.22.1
+      - key: BOT_TOKEN
+        sync: false
+      - key: GUILD_ID
+        value: "1340570565676761121"
+      - key: DATABASE_PATH
+        value: /var/data/glowbot.sqlite
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"
+      - key: PRODUCT_CHECK_SECONDS
+        value: "300"
