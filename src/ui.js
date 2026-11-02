@@ -27,6 +27,7 @@ function homePanel(config = {}) {
     `Stock can change after a check. Always confirm the exact shade, size and price at the shop.`,
     { footer: { text: 'Glowbot setup panel · home' } })], [
     row(button('glow:preferences', 'Choose alerts', 1), button('glow:search', 'Find a product'), button('glow:request', 'Request a product'), button('glow:mine', 'My alerts'), button('glow:help', 'Help')),
+    row(button('glow:trends', 'Discover beauty trends')),
   ]);
 }
 
@@ -117,10 +118,67 @@ function helpPanel(config = {}) {
     '**What gets checked:** Selected public retailer product pages. The first successful check sets a baseline. ' +
     'An alert follows a confirmed restock or price drop. A blocked or unreadable page is marked unconfirmed.\n\n' +
     '**New arrivals:** Selected recent retailer collection feeds. The first import is silent; later newly available products are announced.\n\n' +
-    '**Trends:** The trending channel is for sourced picks shared by the team. Glowbot does not invent popularity scores.\n\n' +
+    '**Trends:** Discover beauty trends or use /trends to search saved public sources. Retailer favourites, 2026 reader picks, dated beauty coverage and observed interest signals have links and checked times. ' +
+    'A retailer list position is not sales volume. New means newly observed by Glowbot, not necessarily newly released. Upcoming needs an explicit dated announcement. ' +
+    'The first snapshot is silent; retailer list movement needs comparable observations at least 24 hours apart. Free sources do not provide complete social platform coverage.\n\n' +
     '**Need help?** Use /status to check the service, or contact the team in feedback. ' +
     'Allow server direct messages if you want private alerts.',
-    { footer: { text: 'Glowbot setup panel · help' } })], [row(button('glow:preferences', 'Choose alerts', 1), button('glow:search', 'Find a product'), button('glow:mine', 'My alerts'))]);
+    { footer: { text: 'Glowbot setup panel · help' } })], [row(button('glow:preferences', 'Choose alerts', 1), button('glow:search', 'Find a product'), button('glow:mine', 'My alerts'), button('glow:trends', 'Discover beauty trends'))]);
+}
+
+function trendsPanel(records = [], { query = '', filter = 'all', page = 0, summary, interactive = false } = {}) {
+  const labels = { bestsellers: 'Current retailer favourite', hits: '2026 reader voted winner', rising: 'Observed interest signal', new: 'Newly observed coverage', upcoming: 'Dated upcoming announcement' };
+  const sourceLink = value => {
+    try { const url = new URL(value); return url.href.length <= 2048 && url.protocol === 'https:' && !url.username && !url.password ? url.href : null; }
+    catch { return null; }
+  };
+  const bounded = records.slice(0, 200);
+  const pages = Math.max(1, Math.ceil(bounded.length / 4));
+  page = Math.max(0, Math.min(pages - 1, Number.isSafeInteger(page) ? page : 0));
+  const shown = bounded.slice(page * 4, (page + 1) * 4);
+  const description = 'Saved public source observations, including 2026 reader picks, not measured sales or complete social platform tracking. ' +
+    'Last observed times identify the cached source snapshot. New means newly observed by Glowbot. Upcoming requires a verified dated announcement.';
+  const result = payload(shown.length ? shown.map(record => {
+    const url = sourceLink(record.url) || sourceLink(record.sourceUrl);
+    const source = sourceLink(record.sourceUrl);
+    const lines = [
+      record.sourceUnavailable ? '**Source temporarily unavailable. Showing the last saved observation.**' : '',
+      `**${record.kind === 'rising' && Number.isSafeInteger(record.position) && Number.isSafeInteger(record.previousPosition) ? 'Moved higher in a retailer list' : labels[record.kind] || 'Sourced beauty discovery'}**`,
+      `Source: ${safe(cut(record.source || 'Public source', 100))}`,
+      safe(cut(record.evidence || '', 400)),
+    ];
+    if (Number.isSafeInteger(record.position) && record.position > 0) {
+      if (record.kind === 'rising' && Number.isSafeInteger(record.previousPosition) && record.previousPosition > 0) {
+        lines.push(`Retailer list position: ${record.previousPosition} at ${timestamp(record.previousObservedAt)} → ${record.position} at ${timestamp(record.observedAt)}.`);
+      } else lines.push(`Observed retailer list position: ${record.position}.`);
+    }
+    if (record.publishedAt) lines.push(`Source published: ${timestamp(record.publishedAt)}.`);
+    if (record.kind === 'upcoming' && record.launchAt) lines.push(`Announced launch: ${timestamp(record.launchAt)}.`);
+    lines.push(`Last observed: ${timestamp(record.observedAt)}.`);
+    if (source && source !== url) lines.push(`Source page: ${source}`);
+    return embed(cut(record.name || 'Beauty discovery', 200), cut(lines.filter(Boolean).join('\n\n'), 1000), url ? { url } : {});
+  }) : [embed('No verified matching discoveries yet',
+    filter === 'upcoming' ? 'No matching explicit dated upcoming announcement has been verified. Cached reader picks and newly listed products are not proof of an upcoming launch.' :
+      filter === 'hits' ? 'No matching verified 2026 reader voted winner is saved in the source cache yet. Try another product or brand query.' :
+      'No matching current source observations or 2026 reader picks are saved in the cache yet. Sources may be quiet or temporarily unavailable. Try another query or check again after the next source refresh.')]);
+  const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1000000 ? value : 0;
+  const coverage = summary ? `\n\nCached coverage for this query: ${count(summary.editorialArticles)} editorial articles from ${count(summary.independentPublishers)} publisher domains; ${count(summary.sourceCount)} sources. ` +
+    `Latest saved observation: ${timestamp(summary.latestObservedAt)}.${summary.message ? `\n${safe(cut(summary.message, 400))}` : ''}` : '';
+  result.content = cut(`**Beauty discoveries${query ? `: ${safe(cut(query, 100))}` : ''}**\n${description}${coverage}`, 1000);
+  if (interactive) {
+    result.embeds[0].footer = { text: `Page ${page + 1} of ${pages} · ${bounded.length} saved results${records.length >= 200 ? ' · showing up to 200' : ''}` };
+    const filters = [
+      ['all', 'All discoveries'], ['hits', '2026 reader picks'], ['bestsellers', 'Retailer favourites'],
+      ['rising', 'Observed interest signals'], ['new', 'Newly observed coverage'], ['upcoming', 'Verified upcoming announcements'],
+    ];
+    result.components.push(row({ type: 3, custom_id: 'glow:trends-filter', placeholder: 'Filter your discoveries', min_values: 1, max_values: 1,
+      options: filters.map(([value, label]) => ({ value, label, default: value === filter })) }));
+    const navigation = [];
+    if (page > 0) navigation.push(button(`glow:trends-page:${page - 1}`, 'Previous'));
+    if (page + 1 < pages) navigation.push(button(`glow:trends-page:${page + 1}`, 'Next'));
+    if (navigation.length) result.components.push(row(...navigation));
+  }
+  return result;
 }
 
 function rulesPanel() {
@@ -158,4 +216,4 @@ function statusPanel(status = {}) {
     `${status.message ? `\n${safe(status.message)}` : ''}`)]);
 }
 
-module.exports = { CATEGORIES, homePanel, publicPreferencesPanel, preferencesPanel, productCards, helpPanel, rulesPanel, alertPayload, statusPanel, priceFor, timestamp };
+module.exports = { CATEGORIES, homePanel, publicPreferencesPanel, preferencesPanel, productCards, helpPanel, rulesPanel, alertPayload, statusPanel, trendsPanel, priceFor, timestamp };
