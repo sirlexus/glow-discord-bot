@@ -4,10 +4,11 @@ const http = require('node:http');
 const { Store } = require('./store');
 const { loadConfig, CATEGORIES } = require('./config');
 const { commands } = require('./commands');
-const { setupGuild } = require('./setup');
+const { setupGuild, SETUP_PERMISSION_NAMES } = require('./setup');
 const ui = require('./ui');
 const { inspectProduct, inspectCollection, validateProductUrl, RETAILERS } = require('./retailers');
 const { Engine } = require('./engine');
+const { TrendsService } = require('./trends');
 const safe = value => String(value ?? '').replace(/@/g, '@\u200b').replace(/[\[\]_*`~|<>]/g, '\\$&');
 const text = content => ({ content, allowedMentions: { parse: [] } });
 const privateReply = (interaction, payload) => interaction.deferred ? interaction.editReply(payload) : interaction.reply({ ...payload, flags: MessageFlags.Ephemeral });
@@ -22,10 +23,12 @@ function modal(id, title, fields) {
       .setMaxLength(field.max || 200).setPlaceholder(field.placeholder || ''))));
 }
 
-function createHandler({ store, client, config, engine, inspect = inspectProduct, setup = setupGuild }) {
+function createHandler({ store, client, config, engine, trends, inspect = inspectProduct, setup = setupGuild }) {
   let settingUp = false;
   // Bounded short lived search state preserves pagination without exposing user searches.
   const searches = new Map();
+  const trendSearches = new Map();
+  const trendFilters = ['all', 'hits', 'bestsellers', 'rising', 'new', 'upcoming'];
   const searchKey = i => `${i.user.id}:${i.message?.id || 'command'}`;
   const matches = query => store.listProducts(config.guildId, { search: query, limit: 1000 }).filter(p => !p.paused);
   const remember = (key, query) => {
@@ -33,6 +36,15 @@ function createHandler({ store, client, config, engine, inspect = inspectProduct
     if (searches.size > 1000) searches.delete(searches.keys().next().value);
     searches.set(key, { query, expires: Date.now() + 15 * 60_000 });
   };
+  const rememberTrends = (key, query, filter) => {
+    for (const [id, entry] of trendSearches) if (entry.expires <= Date.now()) trendSearches.delete(id);
+    if (trendSearches.size >= 1000 && !trendSearches.has(key)) trendSearches.delete(trendSearches.keys().next().value);
+    trendSearches.set(key, { query, filter, expires: Date.now() + 15 * 60_000 });
+  };
+  const trendPayload = (query, filter, page = 0) => ui.trendsPanel(
+    trends?.list({ query, filter, limit: 200 }) || [],
+    { query, filter, page, summary: trends?.summary?.({ query }), interactive: true },
+  );
   const myAlerts = (interaction, requestedPage = 0) => {
     const categories = store.categories(config.guildId, interaction.user.id);
     const watched = store.userWatches(config.guildId, interaction.user.id);
@@ -96,6 +108,37 @@ function createHandler({ store, client, config, engine, inspect = inspectProduct
     const cfg = store.getConfig(config.guildId);
     const command = interaction.commandName;
     if (command === 'glow') return privateReply(interaction, ui.homePanel(cfg));
+    if (id?.startsWith('glow:trends-page:') || id === 'glow:trends-filter') {
+      const key = searchKey(interaction);
+      const session = trendSearches.get(key);
+      if (!session || session.expires <= Date.now()) {
+        trendSearches.delete(key);
+        return privateReply(interaction, text('This discovery search expired. Select Discover beauty trends or use /trends to start again.'));
+      }
+      if (!interaction.message?.flags?.has(MessageFlags.Ephemeral)) return privateReply(interaction, text('Open your own private discoveries using Discover beauty trends or /trends.'));
+      const filter = id === 'glow:trends-filter' ? interaction.values?.[0] : session.filter;
+      if (!trendFilters.includes(filter) || (id === 'glow:trends-filter' && interaction.values.length !== 1)) return privateReply(interaction, text('Choose one of the listed discovery filters.'));
+      const page = id === 'glow:trends-filter' ? 0 : Number(id.split(':')[2]);
+      if (!Number.isSafeInteger(page) || page < 0 || page > 49) return privateReply(interaction, text('This discovery page is unavailable. Start again using /trends.'));
+      const result = await privateUpdate(interaction, trendPayload(session.query, filter, page));
+      rememberTrends(key, session.query, filter);
+      if (interaction.deferred) {
+        // DM membership checks defer a new private reply rather than editing
+        // the originating message. Its new controls need the same user scope.
+        const message = await interaction.fetchReply();
+        rememberTrends(`${interaction.user.id}:${message.id}`, session.query, filter);
+      }
+      return result;
+    }
+    if (command === 'trends' || id === 'glow:trends') {
+      const query = command === 'trends' ? (interaction.options.getString('query') || '').trim().slice(0, 100) : '';
+      const filter = command === 'trends' ? interaction.options.getString('filter') || 'all' : 'all';
+      if (!trendFilters.includes(filter)) return privateReply(interaction, text('Choose one of the listed discovery filters.'));
+      await privateReply(interaction, trendPayload(query, filter));
+      const message = await interaction.fetchReply();
+      rememberTrends(`${interaction.user.id}:${message.id}`, query, filter);
+      return;
+    }
     if (command === 'help' || id === 'glow:help') {
       const payload = ui.helpPanel(cfg);
       payload.components.push({ type: 1, components: [{ type: 2, style: 2, custom_id: 'glow:request', label: 'Request a product' }] });
@@ -239,7 +282,17 @@ function createHandler({ store, client, config, engine, inspect = inspectProduct
     try { await handle(interaction); }
     catch (error) {
       console.warn(`Interaction ${interaction.commandName || 'component'}: ${error.code || error.name || 'error'}`);
-      const message = text(error.name === 'RetailerError' ? `${error.message}\nUse /retailers for supported shops.` : 'This action could not finish. Try again, or ask the team to check the private host logs.');
+      const isSetupAction = interaction.commandName === 'setup' || interaction.customId === 'glow:setup-apply';
+      const knownMissingPermissions = isSetupAction && error.code === 'SETUP_PERMISSIONS' &&
+        Array.isArray(error.missingPermissions) && error.missingPermissions.length > 0 &&
+        error.missingPermissions.length <= SETUP_PERMISSION_NAMES.length &&
+        new Set(error.missingPermissions).size === error.missingPermissions.length &&
+        error.missingPermissions.every(name => SETUP_PERMISSION_NAMES.includes(name));
+      const expectedSetupMessage = knownMissingPermissions ?
+        `Glowbot needs these server permissions to set up channels: ${error.missingPermissions.join(', ')}. Administrator is not required.` : null;
+      // Only this exact, hardcoded preflight message may cross the private-log boundary.
+      const safeSetupMessage = expectedSetupMessage && error.publicMessage === expectedSetupMessage ? expectedSetupMessage : null;
+      const message = text(safeSetupMessage || (error.name === 'RetailerError' ? `${error.message}\nUse /retailers for supported shops.` : 'This action could not finish. Try again, or ask the team to check the private host logs.'));
       try {
         if (interaction.deferred) await interaction.editReply(message);
         else if (interaction.replied) await interaction.followUp({ ...message, flags: MessageFlags.Ephemeral });
@@ -253,9 +306,10 @@ async function start() {
   const config = loadConfig();
   const store = new Store(config.databasePath);
   const client = new Client({ intents: [GatewayIntentBits.Guilds], allowedMentions: { parse: [] } });
-  const engine = new Engine({ store, client, inspectProduct, inspectCollection, config });
+  const trends = new TrendsService({ store, client, config });
+  const engine = new Engine({ store, client, inspectProduct, inspectCollection, config, trends });
   let server;
-  client.on(Events.InteractionCreate, createHandler({ store, client, config, engine }));
+  client.on(Events.InteractionCreate, createHandler({ store, client, config, engine, trends }));
   client.on(Events.Error, error => console.error(`Discord error: ${error.code || error.name}`));
   client.once(Events.ClientReady, async () => {
     try {
