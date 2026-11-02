@@ -11,6 +11,13 @@ function commands() {
     base('help', 'How to use Glowbot'),
     base('alerts', 'Choose your beauty alert categories'),
     base('find', 'Find monitored beauty products').addStringOption(o => o.setName('query').setDescription('Product or brand').setMaxLength(100)),
+    base('trends', 'Browse sourced beauty discoveries and observed retailer favourites')
+      .addStringOption(o => o.setName('query').setDescription('Product, brand or headline').setMaxLength(100))
+      .addStringOption(o => o.setName('filter').setDescription('Type of sourced discovery').addChoices(
+        { name: 'All discoveries', value: 'all' }, { name: 'Retailer favourites', value: 'bestsellers' },
+        { name: '2026 reader picks', value: 'hits' },
+        { name: 'Observed interest signals', value: 'rising' }, { name: 'Newly observed coverage', value: 'new' },
+        { name: 'Verified upcoming announcements', value: 'upcoming' })),
     base('myalerts', 'See the products and categories you follow'),
     base('privacy', 'See stored data or delete your alert preferences').addBooleanOption(o => o.setName('delete').setDescription('Delete my preferences, product watches and requests')),
     base('status', 'See whether Glowbot and its product sources are working'),
