@@ -139,9 +139,12 @@ function trendsPanel(records = [], { query = '', filter = 'all', page = 0, summa
   const description = 'Saved public source observations, including 2026 reader picks, not measured sales or complete social platform tracking. ' +
     'Last observed times identify the cached source snapshot. New means newly observed by Glowbot. Upcoming requires a verified dated announcement.';
   const result = payload(shown.length ? shown.map(record => {
-    const url = sourceLink(record.url) || sourceLink(record.sourceUrl);
-    const source = sourceLink(record.sourceUrl);
+    const url = sourceLink(record.url);
+    const source = sourceLink(record.sourceUrl) || url;
+    const markdownLink = (label, href) => `[${label}](${href.replace(/\(/g, '%28').replace(/\)/g, '%29')})`;
     const lines = [
+      source ? markdownLink('View source', source) : '',
+      url && source !== url ? markdownLink(Number.isSafeInteger(record.position) ? 'View product' : 'Read coverage', url) : '',
       record.sourceUnavailable ? '**Source temporarily unavailable. Showing the last saved observation.**' : '',
       `**${record.kind === 'rising' && Number.isSafeInteger(record.position) && Number.isSafeInteger(record.previousPosition) ? 'Moved higher in a retailer list' : labels[record.kind] || 'Sourced beauty discovery'}**`,
       `Source: ${safe(cut(record.source || 'Public source', 100))}`,
@@ -155,8 +158,9 @@ function trendsPanel(records = [], { query = '', filter = 'all', page = 0, summa
     if (record.publishedAt) lines.push(`Source published: ${timestamp(record.publishedAt)}.`);
     if (record.kind === 'upcoming' && record.launchAt) lines.push(`Announced launch: ${timestamp(record.launchAt)}.`);
     lines.push(`Last observed: ${timestamp(record.observedAt)}.`);
-    if (source && source !== url) lines.push(`Source page: ${source}`);
-    return embed(cut(record.name || 'Beauty discovery', 200), cut(lines.filter(Boolean).join('\n\n'), 1000), url ? { url } : {});
+    // Discord suppresses later embeds sharing an embed.url. Keep canonical
+    // evidence links in each description so every distinct result stays visible.
+    return embed(cut(record.name || 'Beauty discovery', 200), cut(lines.filter(Boolean).join('\n\n'), 1000));
   }) : [embed('No verified matching discoveries yet',
     filter === 'upcoming' ? 'No matching explicit dated upcoming announcement has been verified. Cached reader picks and newly listed products are not proof of an upcoming launch.' :
       filter === 'hits' ? 'No matching verified 2026 reader voted winner is saved in the source cache yet. Try another product or brand query.' :
