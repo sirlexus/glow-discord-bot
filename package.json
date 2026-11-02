@@ -1,19 +1,22 @@
 {
   "name": "glowbot",
-  "version": "1.0.0",
-  "description": "GlowBot: Discord bot for beauty drops and trends",
+  "version": "2.0.0",
+  "description": "Glowbot beauty community, product watches and confirmed stock alerts",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "npx puppeteer browsers install chrome"
+    "test": "node --test",
+    "check": "node scripts/check.js",
+    "inspect": "node scripts/inspect.js",
+    "backup": "node scripts/backup.js"
   },
   "dependencies": {
-    "discord.js": "^14.14.1",
-    "dotenv": "^16.4.5",
-    "node-cron": "^3.0.3",
-    "puppeteer": "^22.7.1"
+    "discord.js": "14.27.0",
+    "dotenv": "17.3.1",
+    "cheerio": "1.2.0",
+    "undici": "8.12.3"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=24.17.0 <25"
   }
 }
