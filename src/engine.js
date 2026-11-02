@@ -4,8 +4,8 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { alertPayload } = require('./ui');
 
 class Engine {
-  constructor({ store, client, inspectProduct, inspectCollection, config, logger = console }) {
-    Object.assign(this, { store, client, inspectProduct, inspectCollection, config, logger });
+  constructor({ store, client, inspectProduct, inspectCollection, config, trends, logger = console }) {
+    Object.assign(this, { store, client, inspectProduct, inspectCollection, config, trends, logger });
     this.running = false;
     this.stopping = false;
     this.lastCycle = null;
@@ -110,6 +110,8 @@ class Engine {
     if (this.running || this.stopping || !this.client.isReady()) return;
     this.running = true;
     try {
+      if (this.trends) await this.trends.tick();
+      if (this.stopping) return;
       await this.deliver();
       if (this.inspectCollection) for (const source of this.store.listSources(this.config.guildId)) {
         if (this.stopping) break;
@@ -135,6 +137,7 @@ class Engine {
   }
   async stop() {
     this.stopping = true;
+    this.trends?.stop();
     clearInterval(this.timer);
     const deadline = Date.now() + 20000;
     while (this.running && Date.now() < deadline) await delay(100);
