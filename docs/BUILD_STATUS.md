@@ -10,9 +10,9 @@ The implementation includes 14 commands, exact product and shade watches, option
 
 ## Server setup
 
-The owner interface completed Welcome & Rules, Beauty Alerts, Community, Guides & Support and private Team groups. Fifteen public channel destinations are configured. Welcome, rules, preferences, help and discovery panels are installed. Alert channels and information channels deny member posting while allowing Glowbot to post. Community and command channels remain writable.
+The owner interface completed Welcome & Rules, Beauty Alerts, Community, Guides & Support and private Team groups. Fifteen public channel destinations and the dedicated private request destination are configured. Welcome, rules, preferences, help and discovery panels are installed. Alert channels and information channels deny member posting while allowing Glowbot to post. Community and command channels remain writable.
 
-Existing channels and messages were retained. The old Labubu channel remains separate. The existing private admin log channel was moved with its original restrictions. No access to its history was added. Manager-only /requests provides the durable product request queue.
+Existing channels and messages were retained. The old Labubu channel remains separate. The existing private admin log channel was moved with its original restrictions. No access to its history was added. A separate private bot-requests channel was created for notifications from this application. Only the owner and Glowbot were included. Its notification route was verified through the real member request form, and the clearly labelled setup request was resolved through the manager control. The legacy private log history was not exposed. Manager-only /requests also provides the durable request queue.
 
 The bot still has no global Manage Channels or Manage Roles permission. Its automatic /setup apply control therefore remains unavailable; the manually completed layout and normal member controls work with its existing server permissions and limited public-channel posting exceptions.
 
@@ -35,3 +35,5 @@ Product search, an individual watch, My alerts, category choices and Stop all my
 Restart checks preserved the configured channels, panel references, discovery history, existing product rows and saved preference state. The two W variants were added to the same durable store after that verification. Ordinary member desktop and mobile testing using a separate non-manager account has not been performed. Automated tests cover the manager permission boundary and private preference isolation.
 
 Other retailer adapters and full collection imports must pass their own production checks before broader coverage is advertised. The service is a selected monitor with source timestamps and failure states, not an exhaustive market or instant stock service.
+
+A consistent SQLite checkpoint was created with the supplied backup helper on the included disk. This checkpoint is not an independent off-service backup.
